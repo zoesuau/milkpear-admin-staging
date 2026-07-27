@@ -426,6 +426,128 @@
         padding: 14px;
       }
 
+      .shipping-tracking-import-panel {
+        max-width: 500px;
+        margin: 0 auto 16px auto;
+        background: #ffffff;
+        border: 1px solid #b9d9c4;
+        border-radius: 16px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+        padding: 14px;
+      }
+
+      .shipping-tracking-import-panel h3 {
+        margin: 0;
+        color: #244b35;
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .shipping-tracking-import-actions {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+
+      .shipping-tracking-file-label,
+      .shipping-tracking-import-submit {
+        min-height: 38px;
+        box-sizing: border-box;
+        border-radius: 8px;
+        padding: 8px 12px;
+        font-size: 14px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .shipping-tracking-file-label {
+        display: inline-flex;
+        align-items: center;
+        background: #eff8f1;
+        border: 1px solid #8fc69f;
+        color: #285b39;
+      }
+
+      .shipping-tracking-file-label input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .shipping-tracking-import-submit {
+        border: 0;
+        background: #2f855a;
+        color: #ffffff;
+      }
+
+      .shipping-tracking-import-submit:disabled {
+        background: #cbd5e1;
+        color: #64748b;
+        cursor: not-allowed;
+      }
+
+      .shipping-tracking-import-feedback {
+        margin-top: 10px;
+        border-radius: 8px;
+        color: #475569;
+        font-size: 13px;
+        font-weight: 700;
+        line-height: 1.6;
+        white-space: pre-line;
+      }
+
+      .shipping-tracking-import-feedback.is-error {
+        color: #b42318;
+      }
+
+      .shipping-tracking-import-summary {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        margin-top: 10px;
+      }
+
+      .shipping-tracking-import-stat {
+        border-radius: 9px;
+        background: #f8fafc;
+        padding: 8px 10px;
+      }
+
+      .shipping-tracking-import-stat span,
+      .shipping-tracking-import-stat strong {
+        display: block;
+      }
+
+      .shipping-tracking-import-stat span {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .shipping-tracking-import-stat strong {
+        margin-top: 2px;
+        color: #1f2937;
+        font-size: 15px;
+      }
+
+      .shipping-tracking-import-list {
+        margin-top: 10px;
+        max-height: 180px;
+        overflow: auto;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        background: #f8fafc;
+        padding: 8px 10px;
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.6;
+        white-space: pre-line;
+      }
+
       .shipping-print-control-panel h2 {
         color: #2c3e50;
         font-size: 20px;
@@ -3678,6 +3800,53 @@
       </div>
 
       <section
+        class="shipping-tracking-import-panel"
+        aria-labelledby="shippingTrackingImportTitle"
+      >
+        <h3 id="shippingTrackingImportTitle">匯入黑貓貨態檔</h3>
+        <div class="shipping-print-note">
+          讀取黑貓匯出的 waybillstatus.csv，依訂單編號合併託運單號。先預覽、確認後才寫入；不會標記已寄出或發送通知。
+        </div>
+        <div class="shipping-tracking-import-actions">
+          <label class="shipping-tracking-file-label">
+            選擇貨態 CSV
+            <input
+              type="file"
+              id="shippingTrackingFileInput"
+              accept=".csv,text/csv"
+              onchange="handleShippingTrackingFileSelected(event)"
+            />
+          </label>
+          <button
+            type="button"
+            class="shipping-tracking-import-submit"
+            id="shippingTrackingImportButton"
+            onclick="commitShippingTrackingImport()"
+            disabled
+          >
+            確認寫入託運單號
+          </button>
+        </div>
+        <div
+          class="shipping-tracking-import-feedback"
+          id="shippingTrackingImportFeedback"
+          aria-live="polite"
+        >
+          尚未選擇檔案
+        </div>
+        <div
+          class="shipping-tracking-import-summary"
+          id="shippingTrackingImportSummary"
+          hidden
+        ></div>
+        <div
+          class="shipping-tracking-import-list"
+          id="shippingTrackingImportList"
+          hidden
+        ></div>
+      </section>
+
+      <section
         class="shipping-manifest-panel is-empty"
         id="shippingManifestPanel"
         aria-live="polite"
@@ -4284,6 +4453,8 @@
       let currentDateFilter = "全部";
       let currentNotificationFilter = "全部";
       let shippingManifestDateMode = "today";
+      let shippingTrackingImportPreview = null;
+      let shippingTrackingImportSubmitting = false;
       const OPEN_NOTIFICATION_STATUSES = new Set([
         "pending_send",
         "failed",
@@ -10121,6 +10292,365 @@
         window.setTimeout(() => {
           window.print();
         }, 50);
+      }
+
+      function setShippingTrackingImportFeedback(message, isError = false) {
+        const feedback = document.getElementById(
+          "shippingTrackingImportFeedback",
+        );
+        if (!feedback) return;
+        feedback.classList.toggle("is-error", isError);
+        feedback.innerText = String(message || "");
+      }
+
+      function parseShippingTrackingCsv(text) {
+        const rows = [];
+        let row = [];
+        let cell = "";
+        let quoted = false;
+        const source = String(text || "").replace(/^\uFEFF/, "");
+
+        for (let index = 0; index < source.length; index += 1) {
+          const character = source[index];
+          if (character === '"') {
+            if (quoted && source[index + 1] === '"') {
+              cell += '"';
+              index += 1;
+            } else {
+              quoted = !quoted;
+            }
+            continue;
+          }
+          if (character === "," && !quoted) {
+            row.push(cell);
+            cell = "";
+            continue;
+          }
+          if ((character === "\n" || character === "\r") && !quoted) {
+            if (character === "\r" && source[index + 1] === "\n") index += 1;
+            row.push(cell);
+            if (row.some((value) => String(value || "").trim())) rows.push(row);
+            row = [];
+            cell = "";
+            continue;
+          }
+          cell += character;
+        }
+
+        row.push(cell);
+        if (row.some((value) => String(value || "").trim())) rows.push(row);
+        return rows;
+      }
+
+      function decodeShippingTrackingCsv(arrayBuffer) {
+        const bytes = new Uint8Array(arrayBuffer);
+        const candidates = [];
+        if (
+          bytes.length >= 3 &&
+          bytes[0] === 0xef &&
+          bytes[1] === 0xbb &&
+          bytes[2] === 0xbf
+        ) {
+          candidates.push("utf-8");
+        } else {
+          candidates.push("big5", "utf-8");
+        }
+
+        for (const encoding of candidates) {
+          try {
+            const decoded = new TextDecoder(encoding, { fatal: true }).decode(
+              bytes,
+            );
+            if (decoded.includes("託運單號") && decoded.includes("訂單編號")) {
+              return { text: decoded, encoding };
+            }
+          } catch (error) {
+            // Try the next supported encoding.
+          }
+        }
+        throw new Error("TRACKING_FILE_ENCODING_OR_HEADER_INVALID");
+      }
+
+      function normalizeShippingTrackingNumber(value) {
+        const normalized = String(value || "")
+          .trim()
+          .replace(/^'+/, "")
+          .replace(/[\s-]+/g, "");
+        return /^\d{10,12}$/.test(normalized) ? normalized : "";
+      }
+
+      function getShippingTrackingNumbersFromStoredValue(value) {
+        const matches = String(value || "").match(/\d{10,12}/g) || [];
+        return [...new Set(matches.map(normalizeShippingTrackingNumber).filter(Boolean))];
+      }
+
+      function renderShippingTrackingImportPreview(preview) {
+        const summary = document.getElementById(
+          "shippingTrackingImportSummary",
+        );
+        const list = document.getElementById("shippingTrackingImportList");
+        const importButton = document.getElementById(
+          "shippingTrackingImportButton",
+        );
+        if (!summary || !list || !importButton) return;
+
+        const stats = [
+          ["檔案資料列", `${preview.dataRowCount} 列`],
+          ["有效訂單編號", `${preview.entries.length} 筆`],
+          ["有效託運單號", `${preview.trackingNumberCount} 號`],
+          ["目前畫面可配對", `${preview.locallyMatchedCount} 筆`],
+        ];
+        summary.innerHTML = stats
+          .map(
+            ([label, value]) => `
+              <div class="shipping-tracking-import-stat">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(value)}</strong>
+              </div>
+            `,
+          )
+          .join("");
+        summary.hidden = false;
+
+        const detailLines = preview.entries.slice(0, 100).map((entry) => {
+          const localOrder = latestAdminOrders.find(
+            (order) => String(order?.orderNo || "").trim() === entry.orderNo,
+          );
+          const currentNumbers = getShippingTrackingNumbersFromStoredValue(
+            localOrder?.trackingNo,
+          );
+          const newNumbers = entry.trackingNos.filter(
+            (number) => !currentNumbers.includes(number),
+          );
+          const state = localOrder
+            ? newNumbers.length
+              ? `將新增 ${newNumbers.length} 號`
+              : "目前已存在"
+            : "待後端完整訂單確認";
+          return `${entry.orderNo} → ${entry.trackingNos.join("、")}（${state}）`;
+        });
+        if (preview.entries.length > 100) {
+          detailLines.push(`另有 ${preview.entries.length - 100} 筆未在此展開`);
+        }
+        if (preview.missingOrderNoCount) {
+          detailLines.push(
+            `略過 ${preview.missingOrderNoCount} 列：黑貓檔案沒有訂單編號`,
+          );
+        }
+        if (preview.invalidTrackingCount) {
+          detailLines.push(
+            `略過 ${preview.invalidTrackingCount} 列：託運單號格式不正確`,
+          );
+        }
+        list.innerText = detailLines.join("\n");
+        list.hidden = detailLines.length === 0;
+        importButton.disabled =
+          shippingTrackingImportSubmitting || preview.entries.length === 0;
+      }
+
+      async function handleShippingTrackingFileSelected(event) {
+        const file = event?.target?.files?.[0] || null;
+        const importButton = document.getElementById(
+          "shippingTrackingImportButton",
+        );
+        shippingTrackingImportPreview = null;
+        if (importButton) importButton.disabled = true;
+        if (!file) {
+          setShippingTrackingImportFeedback("尚未選擇檔案");
+          return;
+        }
+        if (!/\.csv$/i.test(file.name) || file.size > 5 * 1024 * 1024) {
+          setShippingTrackingImportFeedback(
+            "請選擇 5MB 以下的黑貓 waybillstatus.csv。",
+            true,
+          );
+          return;
+        }
+
+        setShippingTrackingImportFeedback("正在解析黑貓貨態檔...");
+        try {
+          const decoded = decodeShippingTrackingCsv(await file.arrayBuffer());
+          const rows = parseShippingTrackingCsv(decoded.text);
+          if (rows.length < 2) throw new Error("TRACKING_FILE_EMPTY");
+
+          const headers = rows[0].map((value) =>
+            String(value || "")
+              .replace(/^\uFEFF/, "")
+              .trim(),
+          );
+          const trackingIndex = headers.indexOf("託運單號");
+          const orderIndex = headers.indexOf("訂單編號");
+          if (trackingIndex < 0 || orderIndex < 0) {
+            throw new Error("TRACKING_FILE_HEADERS_INVALID");
+          }
+
+          const grouped = new Map();
+          let missingOrderNoCount = 0;
+          let invalidTrackingCount = 0;
+          rows.slice(1).forEach((row) => {
+            const orderNo = String(row[orderIndex] || "").trim();
+            const trackingNo = normalizeShippingTrackingNumber(
+              row[trackingIndex],
+            );
+            if (!orderNo) {
+              missingOrderNoCount += 1;
+              return;
+            }
+            if (!trackingNo) {
+              invalidTrackingCount += 1;
+              return;
+            }
+            if (!grouped.has(orderNo)) grouped.set(orderNo, new Set());
+            grouped.get(orderNo).add(trackingNo);
+          });
+
+          const entries = [...grouped.entries()].map(
+            ([orderNo, trackingNos]) => ({
+              orderNo,
+              trackingNos: [...trackingNos],
+            }),
+          );
+          const locallyLoadedOrderNos = new Set(
+            latestAdminOrders.map((order) =>
+              String(order?.orderNo || "").trim(),
+            ),
+          );
+          shippingTrackingImportPreview = {
+            fileName: file.name,
+            encoding: decoded.encoding,
+            dataRowCount: rows.length - 1,
+            entries,
+            trackingNumberCount: entries.reduce(
+              (sum, entry) => sum + entry.trackingNos.length,
+              0,
+            ),
+            locallyMatchedCount: entries.filter((entry) =>
+              locallyLoadedOrderNos.has(entry.orderNo),
+            ).length,
+            missingOrderNoCount,
+            invalidTrackingCount,
+          };
+          renderShippingTrackingImportPreview(shippingTrackingImportPreview);
+          setShippingTrackingImportFeedback(
+            `已讀取 ${file.name}（${decoded.encoding.toUpperCase()}）。請確認預覽後再寫入。`,
+          );
+        } catch (error) {
+          console.error("黑貓貨態檔解析失敗", error);
+          setShippingTrackingImportFeedback(
+            "無法解析檔案。請確認這是黑貓匯出的 waybillstatus.csv，且包含「託運單號、訂單編號」欄位。",
+            true,
+          );
+        }
+      }
+
+      function formatShippingTrackingConflictReason(reason) {
+        const labels = {
+          ORDER_NO_NOT_UNIQUE: "後台訂單編號重複",
+          ORDER_CANCELLED: "訂單已取消",
+          EXISTING_TRACKING_VALUE_INVALID: "既有宅配單號含非標準內容",
+        };
+        return labels[String(reason || "")] || String(reason || "資料衝突");
+      }
+
+      async function commitShippingTrackingImport() {
+        const preview = shippingTrackingImportPreview;
+        const importButton = document.getElementById(
+          "shippingTrackingImportButton",
+        );
+        if (
+          shippingTrackingImportSubmitting ||
+          !preview ||
+          !preview.entries.length ||
+          !importButton
+        ) {
+          return;
+        }
+        if (
+          !window.confirm(
+            `確定依訂單編號寫入 ${preview.entries.length} 筆訂單、共 ${preview.trackingNumberCount} 個託運單號？\n\n既有號碼會保留並合併；不會標記已寄出，也不會發送通知。`,
+          )
+        ) {
+          return;
+        }
+
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+          return;
+        }
+
+        shippingTrackingImportSubmitting = true;
+        importButton.disabled = true;
+        setShippingTrackingImportFeedback("正在安全寫入託運單號...");
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminImportTrackingNumbers",
+              adminSessionToken,
+              entries: preview.entries,
+            }),
+          });
+          const payload = await response.json();
+          if (
+            !payload ||
+            payload.ok !== true ||
+            payload.action !== "adminImportTrackingNumbers"
+          ) {
+            throw new Error(
+              String(payload?.errorCode || "TRACKING_IMPORT_FAILED"),
+            );
+          }
+
+          const updatedOrders = Number(payload?.updated?.orders || 0);
+          const addedNumbers = Number(payload?.updated?.trackingNumbers || 0);
+          const unchanged = Number(payload?.unchanged || 0);
+          const unmatched = Array.isArray(payload?.unmatched)
+            ? payload.unmatched
+            : [];
+          const conflicts = Array.isArray(payload?.conflicts)
+            ? payload.conflicts
+            : [];
+          const resultLines = [
+            `完成：更新 ${updatedOrders} 筆訂單，新增 ${addedNumbers} 個託運單號。`,
+            unchanged ? `已有相同號碼、未異動：${unchanged} 筆。` : "",
+            unmatched.length
+              ? `找不到訂單：${unmatched.slice(0, 20).join("、")}`
+              : "",
+            conflicts.length
+              ? `需人工確認：${conflicts
+                  .slice(0, 20)
+                  .map(
+                    (item) =>
+                      `${item.orderNo}（${formatShippingTrackingConflictReason(item.reason)}）`,
+                  )
+                  .join("、")}`
+              : "",
+          ].filter(Boolean);
+          setShippingTrackingImportFeedback(
+            resultLines.join("\n"),
+            conflicts.length > 0,
+          );
+          shippingTrackingImportPreview = null;
+          const fileInput = document.getElementById(
+            "shippingTrackingFileInput",
+          );
+          if (fileInput) fileInput.value = "";
+          await refreshAdminOrdersManually();
+        } catch (error) {
+          console.error("託運單號批次寫入失敗", error);
+          const message =
+            String(error?.message || "") === "ADMIN_SESSION_REQUIRED"
+              ? "登入已過期，請重新登入 LINE。"
+              : "託運單號寫入失敗，後台資料未確認更新；請重新整理後再試。";
+          setShippingTrackingImportFeedback(message, true);
+        } finally {
+          shippingTrackingImportSubmitting = false;
+          importButton.disabled = !shippingTrackingImportPreview?.entries?.length;
+        }
       }
 
       function buildReadOnlyExtraRow(label, value, extraClass = "") {
