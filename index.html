@@ -1255,6 +1255,7 @@
         font-weight: 800;
       }
       .admin-workflow-date,
+      .admin-workflow-delivery-time-slot,
       .admin-workflow-payment,
       .admin-workflow-status {
         width: 100%;
@@ -4313,8 +4314,28 @@
                 required
               />
             </div>
+            <div class="form-group">
+              <label for="new-delivery-time-slot">黑貓配達時段</label>
+              <select id="new-delivery-time-slot" class="form-control">
+                <option value="4" selected>不指定</option>
+                <option value="1">13:00 前</option>
+                <option value="2">14:00～18:00</option>
+              </select>
+            </div>
 
-            <div class="admin-content-section-title">四、優惠與管理資訊</div>
+            <div class="admin-content-section-title">四、商品內容</div>
+            <div class="form-group">
+              <div id="modal-product-list" class="product-edit-list"></div>
+              <button
+                type="button"
+                class="btn-add-product"
+                onclick="addModalProductRow()"
+              >
+                ➕ 新增品項
+              </button>
+            </div>
+
+            <div class="admin-content-section-title">五、優惠與管理資訊</div>
             <div class="form-group">
               <label>優惠金額</label>
               <input
@@ -4343,18 +4364,6 @@
                 class="edit-textarea"
                 placeholder="僅後台可見，不會通知客戶"
               ></textarea>
-            </div>
-
-            <div class="admin-content-section-title">五、商品內容</div>
-            <div class="form-group">
-              <div id="modal-product-list" class="product-edit-list"></div>
-              <button
-                type="button"
-                class="btn-add-product"
-                onclick="addModalProductRow()"
-              >
-                ➕ 新增品項
-              </button>
             </div>
 
             <div class="admin-content-section-title">六、金額預覽</div>
@@ -6320,6 +6329,34 @@
         return "您好，這筆訂單資料已更新，請您協助確認，謝謝您。";
       }
 
+      function normalizeAdminDeliveryTimeSlot(value) {
+        const token = String(value ?? "").trim();
+        return ["1", "2", "4"].includes(token) ? token : "4";
+      }
+
+      function formatAdminDeliveryTimeSlotLabel(value) {
+        const labels = {
+          1: "13:00 前",
+          2: "14:00～18:00",
+          4: "不指定",
+        };
+        return labels[normalizeAdminDeliveryTimeSlot(value)];
+      }
+
+      function buildAdminDeliveryTimeSlotOptionsHtml(value) {
+        const selectedValue = normalizeAdminDeliveryTimeSlot(value);
+        return [
+          ["4", "不指定"],
+          ["1", "13:00 前"],
+          ["2", "14:00～18:00"],
+        ]
+          .map(
+            ([optionValue, label]) =>
+              `<option value="${optionValue}"${selectedValue === optionValue ? " selected" : ""}>${label}</option>`,
+          )
+          .join("");
+      }
+
       function buildAdminOrderCardHtml(order) {
         const statusMeta = getAdminOrderStatusMeta(order?.orderStatus);
         const orderStatus = String(order?.orderStatus ?? "").trim();
@@ -6333,6 +6370,9 @@
         const requestedShippingBatchLabel = String(
           order?.requestedShippingBatchLabel ?? "",
         ).trim();
+        const deliveryTimeSlot = normalizeAdminDeliveryTimeSlot(
+          order?.deliveryTimeSlot,
+        );
         const requestedShippingStartDate = normalizeAdminDateValue(
           order?.requestedShippingStartDate ?? "",
         );
@@ -6670,6 +6710,7 @@
                   ? buildAdminWorkflowEditorHtml({
                       requestedShippingBatchLabel,
                       expectedShippingDate,
+                      deliveryTimeSlot,
                       paymentMethod: order?.paymentMethod,
                       paymentStatus,
                       orderStatus,
@@ -6685,6 +6726,10 @@
                         <div class="quick-operation-field">
                           <label>確定出貨日期</label>
                           <div>${escapeHtml(expectedShippingDate || "未填")}</div>
+                        </div>
+                        <div class="quick-operation-field">
+                          <label>黑貓配達時段</label>
+                          <div>${escapeHtml(formatAdminDeliveryTimeSlotLabel(deliveryTimeSlot))}</div>
                         </div>
                         <div class="quick-operation-field">
                           <label>付款狀態</label>
@@ -7803,7 +7848,9 @@
 
         if (workflowEditor) {
           workflowEditor
-            .querySelectorAll(".admin-workflow-date, .admin-workflow-payment")
+            .querySelectorAll(
+              ".admin-workflow-date, .admin-workflow-delivery-time-slot, .admin-workflow-payment",
+            )
             .forEach((control) => {
               control.disabled = noteLocked || workflowSaving || shippedSaving;
             });
@@ -8063,6 +8110,7 @@
       function buildAdminWorkflowEditorHtml({
         requestedShippingBatchLabel,
         expectedShippingDate,
+        deliveryTimeSlot,
         paymentMethod,
         paymentStatus,
         orderStatus,
@@ -8087,6 +8135,7 @@
             class="admin-workflow-editor"
             data-admin-workflow-editor="true"
             data-baseline-date="${escapeHtml(expectedShippingDate)}"
+            data-baseline-delivery-time-slot="${escapeHtml(normalizeAdminDeliveryTimeSlot(deliveryTimeSlot))}"
             data-baseline-payment="${escapeHtml(paymentState || "")}"
             data-can-line-notify="${canLineNotify === true ? "true" : "false"}"
           >
@@ -8104,6 +8153,12 @@
                   class="admin-workflow-date"
                   value="${escapeHtml(expectedShippingDate)}"
                 />
+              </div>
+              <div class="admin-workflow-field">
+                <label>黑貓配達時段</label>
+                <select class="admin-workflow-delivery-time-slot">
+                  ${buildAdminDeliveryTimeSlotOptionsHtml(deliveryTimeSlot)}
+                </select>
               </div>
               <div class="admin-workflow-field">
                 <label>付款狀態</label>
@@ -8184,6 +8239,9 @@
         return {
           expectedShippingDate:
             editor.querySelector(".admin-workflow-date")?.value || "",
+          deliveryTimeSlot:
+            editor.querySelector(".admin-workflow-delivery-time-slot")
+              ?.value || "4",
           paymentState:
             editor.querySelector(".admin-workflow-payment")?.value || "",
         };
@@ -8201,6 +8259,8 @@
         const values = adminWorkflowGetValues(editor);
         return (
           values.expectedShippingDate !== (editor.dataset.baselineDate || "") ||
+          values.deliveryTimeSlot !==
+            (editor.dataset.baselineDeliveryTimeSlot || "4") ||
           values.paymentState !== (editor.dataset.baselinePayment || "")
         );
       }
@@ -8232,7 +8292,9 @@
       function adminWorkflowSetSaving(editor, isSaving) {
         editor.dataset.saving = isSaving ? "true" : "false";
         editor
-          .querySelectorAll(".admin-workflow-date, .admin-workflow-payment")
+          .querySelectorAll(
+            ".admin-workflow-date, .admin-workflow-delivery-time-slot, .admin-workflow-payment",
+          )
           .forEach((control) => {
             control.disabled = isSaving;
           });
@@ -8431,7 +8493,7 @@
         if (editor) {
           editor
             .querySelectorAll(
-              ".admin-workflow-date, .admin-workflow-payment, .admin-workflow-save",
+              ".admin-workflow-date, .admin-workflow-delivery-time-slot, .admin-workflow-payment, .admin-workflow-save",
             )
             .forEach((control) => {
               control.disabled = isSaving;
@@ -8694,6 +8756,17 @@
           return "日期格式不正確。";
         }
 
+        if (!["1", "2", "4"].includes(values.deliveryTimeSlot)) {
+          return "黑貓配達時段不正確。";
+        }
+
+        if (
+          !values.expectedShippingDate &&
+          values.deliveryTimeSlot !== "4"
+        ) {
+          return "請先選擇確定出貨日期，再指定黑貓配達時段。";
+        }
+
         return "";
       }
 
@@ -8704,6 +8777,9 @@
       function adminWorkflowGetErrorMessage(errorCode) {
         const messages = {
           INVALID_EXPECTED_SHIPPING_DATE: "日期格式不正確。",
+          DELIVERY_TIME_SLOT_INVALID: "黑貓配達時段不正確。",
+          DELIVERY_TIME_SLOT_REQUIRES_SHIPPING_DATE:
+            "請先選擇確定出貨日期，再指定黑貓配達時段。",
           INVALID_ORDER_WORKFLOW_STATE: "已安排出貨必須選確定出貨日期。",
           PAYMENT_STATUS_NOT_ALLOWED: "付款狀態不允許。",
           ORDER_STATUS_NOT_ALLOWED: "此操作不允許的訂單狀態。",
@@ -8848,6 +8924,7 @@
               adminSessionToken,
               orderNo,
               expectedShippingDate: values.expectedShippingDate,
+              deliveryTimeSlot: values.deliveryTimeSlot,
               paymentState: values.paymentState,
               sendNotification: sendNotification ? "true" : "false",
             }),
@@ -8866,6 +8943,7 @@
             payload.order.orderNo !== orderNo ||
             payload.order.expectedShippingDate !==
               values.expectedShippingDate ||
+            payload.order.deliveryTimeSlot !== values.deliveryTimeSlot ||
             payload.order.paymentState !== values.paymentState
           ) {
             const errorCode = String(payload?.errorCode || "");
@@ -9575,7 +9653,7 @@
         const handleValueChange = (event) => {
           if (
             !event.target.matches(
-              ".admin-workflow-date, .admin-workflow-payment",
+              ".admin-workflow-date, .admin-workflow-delivery-time-slot, .admin-workflow-payment",
             )
           ) {
             return;
@@ -12824,8 +12902,13 @@ ${adminNote}
         if (!document.querySelector("#modal-product-list .product-edit-row")) {
           resetModalProductRows();
         }
-        document.getElementById("addOrderModal").classList.add("open");
+        const modal = document.getElementById("addOrderModal");
+        modal.classList.add("open");
         document.body.style.overflow = "hidden";
+        requestAnimationFrame(() => {
+          const modalBody = modal.querySelector(".modal-body");
+          if (modalBody) modalBody.scrollTop = 0;
+        });
         updateNewOrderAmountPreview();
       }
 
@@ -12980,6 +13063,8 @@ ${adminNote}
             document.getElementById("new-payment-method")?.value || "",
           expectedShippingDate:
             document.getElementById("new-expected-shipping-date")?.value || "",
+          deliveryTimeSlot:
+            document.getElementById("new-delivery-time-slot")?.value || "4",
           // Rolling-deployment compatibility: the backend still accepts the
           // previous admin page while this release reaches all browsers.
           requestedShippingBatchId: "",
@@ -13004,6 +13089,7 @@ ${adminNote}
           !payload.buyerPhone ||
           !payload.expectedShippingDate ||
           !adminWorkflowIsValidDate(payload.expectedShippingDate) ||
+          !["1", "2", "4"].includes(payload.deliveryTimeSlot) ||
           !Number.isInteger(payload.discountAmount) ||
           payload.discountAmount < 0
         ) {
@@ -13084,6 +13170,8 @@ ${adminNote}
               ? "請選擇確定出貨日期。"
               : error.message === "EXPECTED_SHIPPING_DATE_INVALID"
                 ? "確定出貨日期格式不正確，請重新選擇。"
+              : error.message === "DELIVERY_TIME_SLOT_INVALID"
+                ? "黑貓配達時段不正確，請重新選擇。"
               : error.message === "PRODUCT_STOCK_INSUFFICIENT"
                 ? `庫存不足，訂單尚未建立。${
                     Array.isArray(error.shortages) && error.shortages.length
