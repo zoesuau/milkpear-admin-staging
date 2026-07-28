@@ -4298,7 +4298,7 @@
           </div>
           <div id="ezcatExportPreviewView" hidden>
             <div class="shipping-print-note">
-              CSV 欄位依序為：訂單編號、收件人姓名、收件人電話、收件人地址、寄件人姓名、寄件人電話、收貨日期、代收貨款、希望配達時段、複數件。
+              測試版 CSV 欄位依序為：訂單編號、收件人姓名、收件人電話、收件人地址、寄件人姓名、寄件人電話、收貨日期、代收貨款、希望配達時段、複數件、規格。每件包裹各一列；第一件保留代收款，其餘件不重複代收。
             </div>
             <div class="ezcat-export-preview" id="ezcatExportPreviewList"></div>
           </div>
@@ -10876,6 +10876,7 @@
           RECIPIENT_ADDRESS_REQUIRED: "收件地址未填",
           SHIPPING_DATE_INVALID: "確定出貨日期不正確",
           SENDER_PHONE_INVALID: "另填寄件人時，寄件電話格式不正確",
+          PACKAGE_SIZE_UNDETERMINED: "商品總盒數異常，無法判斷包裹尺寸",
           ORDER_NO_TOO_LONG: "訂單編號超過100字",
           RECIPIENT_NAME_TOO_LONG: "收件人姓名超過100字",
           RECIPIENT_ADDRESS_TOO_LONG: "收件地址超過100字",
@@ -11063,7 +11064,11 @@
                   </div>
                   <div class="ezcat-export-row-detail">
                     ${escapeHtml(candidate.recipientPhone || "電話異常")}｜${escapeHtml(candidate.recipientAddress || "地址未填")}<br>
-                    ${escapeHtml(candidate.packageCount || 1)} 件｜配達時段 ${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
+                    ${escapeHtml(candidate.packageCount || 1)} 件｜尺寸 ${escapeHtml(
+                      (candidate.packageSpecs || [])
+                        .map((spec) => (String(spec) === "2" ? "90cm" : "120cm"))
+                        .join("＋") || "無法判斷",
+                    )}｜配達時段 ${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
                     ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : ""}
                   </div>
                   ${
@@ -11313,7 +11318,11 @@
                 <strong>${escapeHtml(candidate.recipientName || "")}<br>${escapeHtml(candidate.orderNo || "")}</strong>
                 <div>
                   ${escapeHtml(candidate.recipientPhone || "")}｜${escapeHtml(candidate.recipientAddress || "")}<br>
-                  ${escapeHtml(candidate.packageCount || 1)} 件｜${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
+                  ${escapeHtml(candidate.packageCount || 1)} 件｜尺寸 ${escapeHtml(
+                    (candidate.packageSpecs || [])
+                      .map((spec) => (String(spec) === "2" ? "90cm" : "120cm"))
+                      .join("＋") || "無法判斷",
+                  )}｜${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
                   ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : "｜無代收"}<br>
                   ${selection.mode === "reexport" ? `重新匯出：${escapeHtml(getEzcatReexportReasonLabel(selection.reason))}` : "首次匯出"}
                 </div>
@@ -11331,11 +11340,11 @@
           );
           feedback.classList.remove("is-error");
           feedback.innerText =
-            `即將建立 ${selected.length} 筆、共 ${selected.reduce(
+            `即將建立 ${selected.length} 筆訂單、共 ${selected.reduce(
               (sum, item) =>
                 sum + Number(item.candidate.packageCount || 1),
               0,
-            )} 件的CP950／Big5 CSV。貨到付款 ${codOrders.length} 筆，代收總額 $${formatAdminMoney(codTotal)}。下載前後端會再次驗證最新資料。`;
+            )} 列包裹資料的CP950／Big5 CSV。相同訂單編號可能重複出現在多列，供測試EZCAT不同尺寸匯入。貨到付款 ${codOrders.length} 筆，代收總額 $${formatAdminMoney(codTotal)}，只放在各訂單第一列。下載前後端會再次驗證最新資料。`;
         }
         setEzcatExportView(true);
         document.getElementById("ezcatExportModalBody")?.scrollTo?.(0, 0);
