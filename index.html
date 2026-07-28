@@ -4833,6 +4833,8 @@
       let ezcatExportSubmitting = false;
       let ezcatExportPreviewMode = false;
       let shippingManifestRemoteOrders = [];
+      let shippingManifestRemoteCandidates = [];
+      let shippingManifestRemoteBatches = [];
       let shippingManifestRemoteRangeKey = "";
       let shippingManifestLoadRequestId = 0;
       const OPEN_NOTIFICATION_STATUSES = new Set([
@@ -10390,6 +10392,8 @@
         ) {
           shippingManifestRemoteRangeKey = "";
           shippingManifestRemoteOrders = [];
+          shippingManifestRemoteCandidates = [];
+          shippingManifestRemoteBatches = [];
           return;
         }
         const adminSessionToken = String(
@@ -10420,6 +10424,10 @@
             return;
           }
           shippingManifestRemoteRangeKey = rangeKey;
+          shippingManifestRemoteCandidates = payload.candidates.slice();
+          shippingManifestRemoteBatches = Array.isArray(payload.recentBatches)
+            ? payload.recentBatches.slice()
+            : [];
           shippingManifestRemoteOrders = payload.candidates.map(
             (candidate) => {
               const manifest = candidate.fields || candidate;
@@ -11155,6 +11163,25 @@
         renderEzcatExportCandidates();
       }
 
+      function applyEzcatExportCandidateData(candidates, recentBatches) {
+        ezcatExportCandidates = Array.isArray(candidates)
+          ? candidates.slice()
+          : [];
+        ezcatExportRecentBatches = Array.isArray(recentBatches)
+          ? recentBatches.slice()
+          : [];
+        ezcatExportSelections.clear();
+        ezcatExportCandidates.forEach((candidate) => {
+          if (candidate.eligibleDefault) {
+            ezcatExportSelections.set(candidate.orderNo, {
+              mode: "initial",
+              reason: "",
+            });
+          }
+        });
+        renderEzcatExportCandidates();
+      }
+
       async function openEzcatExportModal() {
         const { startDate, endDate } = getShippingManifestDateRange();
         if (!startDate || startDate !== endDate) {
@@ -11186,6 +11213,19 @@
         setEzcatExportView(false);
         updateEzcatExportSummary();
 
+        const rangeKey = `${startDate}|${endDate}`;
+        if (
+          shippingManifestRemoteRangeKey === rangeKey &&
+          shippingManifestRemoteCandidates.length
+        ) {
+          applyEzcatExportCandidateData(
+            shippingManifestRemoteCandidates,
+            shippingManifestRemoteBatches,
+          );
+          if (feedback) feedback.innerText = "";
+          return;
+        }
+
         const adminSessionToken = String(
           sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
         ).trim();
@@ -11216,19 +11256,10 @@
               String(payload?.errorCode || "EZCAT_EXPORT_READ_FAILED"),
             );
           }
-          ezcatExportCandidates = payload.candidates.slice();
-          ezcatExportRecentBatches = Array.isArray(payload.recentBatches)
-            ? payload.recentBatches.slice()
-            : [];
-          ezcatExportCandidates.forEach((candidate) => {
-            if (candidate.eligibleDefault) {
-              ezcatExportSelections.set(candidate.orderNo, {
-                mode: "initial",
-                reason: "",
-              });
-            }
-          });
-          renderEzcatExportCandidates();
+          applyEzcatExportCandidateData(
+            payload.candidates,
+            payload.recentBatches,
+          );
           if (feedback) feedback.innerText = "";
         } catch (error) {
           console.error("讀取黑貓匯出清單失敗", error);
