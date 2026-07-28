@@ -4388,9 +4388,6 @@
             ></div>
           </div>
           <div id="ezcatExportPreviewView" hidden>
-            <div class="shipping-print-note">
-              測試版 CSV 欄位依序為：訂單編號、收件人姓名、收件人電話、收件人地址、寄件人姓名、寄件人電話、收貨日期、代收貨款、希望配達時段、複數件、規格。每件包裹各一列；第一件保留代收款，其餘件不重複代收。
-            </div>
             <div class="ezcat-export-preview" id="ezcatExportPreviewList"></div>
           </div>
           <div
@@ -11626,13 +11623,17 @@
             (sum, item) => sum + Number(item.candidate.codAmount || 0),
             0,
           );
+          const packageCount = selected.reduce(
+            (sum, item) =>
+              sum + Number(item.candidate.packageCount || 1),
+            0,
+          );
           feedback.classList.remove("is-error");
           feedback.innerText =
-            `即將建立 ${selected.length} 筆訂單、共 ${selected.reduce(
-              (sum, item) =>
-                sum + Number(item.candidate.packageCount || 1),
-              0,
-            )} 列包裹資料的CP950／Big5 CSV。相同訂單編號可能重複出現在多列，供測試EZCAT不同尺寸匯入。貨到付款 ${codOrders.length} 筆，代收總額 $${formatAdminMoney(codTotal)}，只放在各訂單第一列。下載前後端會再次驗證最新資料。`;
+            `即將匯出 ${selected.length} 筆訂單，共 ${packageCount} 件包裹。\n` +
+            (codOrders.length
+              ? `貨到付款 ${codOrders.length} 筆，代收總額 $${formatAdminMoney(codTotal)}。\n每筆訂單的代收金額只會填在第一件包裹。`
+              : "本批次沒有貨到付款訂單。");
         }
         setEzcatExportView(true);
         document.getElementById("ezcatExportModalBody")?.scrollTo?.(0, 0);
