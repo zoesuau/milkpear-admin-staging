@@ -4832,6 +4832,9 @@
       const ezcatExportSelections = new Map();
       let ezcatExportSubmitting = false;
       let ezcatExportPreviewMode = false;
+      let shippingManifestRemoteOrders = [];
+      let shippingManifestRemoteRangeKey = "";
+      let shippingManifestLoadRequestId = 0;
       const OPEN_NOTIFICATION_STATUSES = new Set([
         "pending_send",
         "failed",
@@ -5195,7 +5198,10 @@
         });
 
         if (tabName === "products") renderProductManagement();
-        if (tabName === "shippingPrint") renderShippingManifest();
+        if (tabName === "shippingPrint") {
+          renderShippingManifest();
+          loadCompleteShippingManifestOrders();
+        }
       }
 
       function renderProductManagement() {
@@ -10305,6 +10311,7 @@
           if (endInput && !endInput.value) endInput.value = getTaipeiToday();
         }
         renderShippingManifest();
+        loadCompleteShippingManifestOrders();
       }
 
       function formatShippingManifestDate(dateString) {
@@ -10336,7 +10343,12 @@
         const startDate = normalizeAdminDateValue(startDateString);
         const endDate = normalizeAdminDateValue(endDateString);
         if (!startDate || !endDate || startDate > endDate) return [];
-        return latestAdminOrders
+        const rangeKey = `${startDate}|${endDate}`;
+        const sourceOrders =
+          shippingManifestRemoteRangeKey === rangeKey
+            ? shippingManifestRemoteOrders
+            : latestAdminOrders;
+        return sourceOrders
           .filter((order) => {
             const status = String(order?.orderStatus || "").trim();
             const expectedShippingDate = normalizeAdminDateValue(
@@ -10365,6 +10377,70 @@
               "zh-Hant",
             );
           });
+      }
+
+      async function loadCompleteShippingManifestOrders() {
+        const { startDate, endDate } = getShippingManifestDateRange();
+        if (
+          !startDate ||
+          !endDate ||
+          startDate > endDate ||
+          !adminWorkflowIsValidDate(startDate) ||
+          !adminWorkflowIsValidDate(endDate)
+        ) {
+          shippingManifestRemoteRangeKey = "";
+          shippingManifestRemoteOrders = [];
+          return;
+        }
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) return;
+        const requestId = ++shippingManifestLoadRequestId;
+        const rangeKey = `${startDate}|${endDate}`;
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminReadEzcatExportCandidates",
+              adminSessionToken,
+              startDate,
+              endDate,
+            }),
+          });
+          const payload = await response.json();
+          if (
+            requestId !== shippingManifestLoadRequestId ||
+            !payload ||
+            payload.ok !== true ||
+            payload.action !== "adminReadEzcatExportCandidates" ||
+            !Array.isArray(payload.candidates)
+          ) {
+            return;
+          }
+          shippingManifestRemoteRangeKey = rangeKey;
+          shippingManifestRemoteOrders = payload.candidates.map(
+            (candidate) => ({
+              orderNo: candidate.orderNo,
+              recipientName: candidate.recipientName,
+              recipientPhone: candidate.recipientPhone,
+              recipientAddress: candidate.recipientAddress,
+              buyerName: candidate.buyerName,
+              itemsSummary: candidate.itemsSummary,
+              totalBoxes: candidate.totalBoxes,
+              finalAmount: candidate.finalAmount,
+              expectedShippingDate: candidate.expectedShippingDate,
+              customerNote: candidate.customerNote,
+              orderStatus: candidate.orderStatus,
+              adminNote: candidate.adminNote,
+              trackingNo: candidate.trackingNo,
+            }),
+          );
+          renderShippingManifest();
+        } catch (error) {
+          console.error("讀取完整出貨總表失敗", error);
+        }
       }
 
       function parseShippingManifestItems(itemsSummary) {
@@ -11829,6 +11905,7 @@
                 );
               });
             renderShippingManifest();
+            loadCompleteShippingManifestOrders();
           });
         }
         const shippingManifestStartDateInput = document.getElementById(
@@ -11839,6 +11916,7 @@
         );
         const handleShippingManifestRangeChange = () => {
           renderShippingManifest();
+          loadCompleteShippingManifestOrders();
         };
         if (shippingManifestStartDateInput) {
           shippingManifestStartDateInput.value = getTaipeiToday();
