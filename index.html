@@ -436,6 +436,228 @@
         padding: 14px;
       }
 
+      .shipping-blackcat-operations {
+        display: grid;
+        gap: 12px;
+        max-width: 500px;
+        margin: 0 auto 16px auto;
+      }
+
+      .shipping-blackcat-operations .shipping-tracking-import-panel,
+      .shipping-blackcat-operations .shipping-ezcat-export-panel {
+        max-width: none;
+        width: auto;
+        margin: 0;
+      }
+
+      .shipping-ezcat-export-panel {
+        background: #ffffff;
+        border: 1px solid #e4bd75;
+        border-radius: 16px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+        padding: 14px;
+      }
+
+      .shipping-ezcat-export-panel h3 {
+        margin: 0;
+        color: #704214;
+        font-size: 17px;
+        font-weight: 800;
+      }
+
+      .shipping-ezcat-export-button,
+      .ezcat-export-primary-button,
+      .ezcat-batch-download-button,
+      .ezcat-reexport-button {
+        border: 0;
+        border-radius: 8px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .shipping-ezcat-export-button {
+        width: 100%;
+        min-height: 42px;
+        margin-top: 10px;
+        padding: 9px 12px;
+        background: #b7791f;
+        color: #ffffff;
+        font-size: 14px;
+      }
+
+      .shipping-ezcat-export-button:disabled,
+      .ezcat-export-primary-button:disabled {
+        cursor: not-allowed;
+        opacity: 0.48;
+      }
+
+      .shipping-ezcat-export-feedback {
+        margin-top: 8px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.55;
+        white-space: pre-line;
+      }
+
+      .shipping-ezcat-export-feedback.is-error {
+        color: #b42318;
+      }
+
+      .ezcat-export-modal-container {
+        max-width: 820px;
+      }
+
+      .ezcat-export-summary {
+        position: sticky;
+        top: -24px;
+        z-index: 2;
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 7px;
+        margin: -8px -8px 12px;
+        padding: 8px;
+        background: rgba(255, 255, 255, 0.96);
+        border-bottom: 1px solid #e2e8f0;
+      }
+
+      .ezcat-export-summary-item {
+        border-radius: 8px;
+        background: #f8fafc;
+        padding: 7px;
+        text-align: center;
+      }
+
+      .ezcat-export-summary-item span,
+      .ezcat-export-summary-item strong {
+        display: block;
+      }
+
+      .ezcat-export-summary-item span {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .ezcat-export-summary-item strong {
+        color: #1f2937;
+        font-size: 16px;
+      }
+
+      .ezcat-export-toolbar {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+        justify-content: space-between;
+        flex-wrap: wrap;
+        margin-bottom: 10px;
+      }
+
+      .ezcat-export-list {
+        display: grid;
+        gap: 8px;
+      }
+
+      .ezcat-export-row {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        gap: 10px;
+        border: 1px solid #e2e8f0;
+        border-radius: 10px;
+        padding: 10px;
+        background: #ffffff;
+      }
+
+      .ezcat-export-row.is-error {
+        border-color: #f5b7b1;
+        background: #fff7f6;
+      }
+
+      .ezcat-export-row.is-previous {
+        border-color: #f1d18a;
+        background: #fffbeb;
+      }
+
+      .ezcat-export-row-main {
+        min-width: 0;
+      }
+
+      .ezcat-export-row-title {
+        color: #1f2937;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .ezcat-export-row-detail,
+      .ezcat-export-row-state {
+        margin-top: 3px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.45;
+        overflow-wrap: anywhere;
+      }
+
+      .ezcat-export-row-state {
+        color: #92400e;
+      }
+
+      .ezcat-reexport-controls {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+        margin-top: 7px;
+      }
+
+      .ezcat-reexport-controls select {
+        min-height: 34px;
+        max-width: 260px;
+        border: 1px solid #d6b36a;
+        border-radius: 7px;
+        background: #ffffff;
+        padding: 5px 7px;
+      }
+
+      .ezcat-reexport-button,
+      .ezcat-batch-download-button {
+        min-height: 34px;
+        padding: 6px 10px;
+        background: #fff3d6;
+        color: #704214;
+      }
+
+      .ezcat-export-preview {
+        display: grid;
+        gap: 8px;
+      }
+
+      .ezcat-export-preview-row {
+        display: grid;
+        grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2fr);
+        gap: 8px;
+        border-bottom: 1px solid #e2e8f0;
+        padding: 8px 0;
+        color: #334155;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+
+      .ezcat-export-modal-footer {
+        padding: 12px 20px;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+      }
+
+      .ezcat-export-primary-button {
+        min-height: 40px;
+        padding: 8px 14px;
+        background: #b7791f;
+        color: #ffffff;
+      }
+
       .shipping-tracking-import-panel h3 {
         margin: 0;
         color: #244b35;
@@ -2621,6 +2843,10 @@
           max-width: 1024px;
           padding: 18px 20px;
         }
+        .shipping-blackcat-operations {
+          max-width: 1024px;
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
         .shipping-manifest-summary {
           grid-template-columns: repeat(4, minmax(0, 1fr));
         }
@@ -2677,10 +2903,24 @@
         }
       }
 
+      @media screen and (max-width: 520px) {
+        .ezcat-export-summary {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+        .ezcat-export-modal-container .modal-body {
+          padding: 14px;
+        }
+        .ezcat-export-summary {
+          top: -14px;
+          margin: -4px -4px 10px;
+        }
+      }
+
       @media screen and (min-width: 1200px) {
         .top-filter-panel,
         .shipping-manifest-panel,
         .shipping-print-control-panel,
+        .shipping-blackcat-operations,
         .cards-container {
           max-width: 1140px;
         }
@@ -2711,6 +2951,7 @@
         .gas-test-panel,
         .admin-tab-bar,
         .shipping-print-control-panel,
+        .shipping-blackcat-operations,
         .top-filter-panel,
         .admin-pagination,
         .cards-container,
@@ -3804,52 +4045,80 @@
         </div>
       </div>
 
-      <section
-        class="shipping-tracking-import-panel"
-        aria-labelledby="shippingTrackingImportTitle"
-      >
-        <h3 id="shippingTrackingImportTitle">匯入黑貓貨態檔</h3>
-        <div class="shipping-print-note">
-          讀取黑貓匯出的 waybillstatus.csv，依訂單編號合併託運單號。先預覽、確認後才寫入；不會標記已寄出或發送通知。
-        </div>
-        <div class="shipping-tracking-import-actions">
-          <label class="shipping-tracking-file-label">
-            選擇貨態 CSV
-            <input
-              type="file"
-              id="shippingTrackingFileInput"
-              accept=".csv,text/csv"
-              onchange="handleShippingTrackingFileSelected(event)"
-            />
-          </label>
+      <div class="shipping-blackcat-operations">
+        <section
+          class="shipping-ezcat-export-panel"
+          aria-labelledby="shippingEzcatExportTitle"
+        >
+          <h3 id="shippingEzcatExportTitle">匯出黑貓出貨 CSV</h3>
+          <div class="shipping-print-note">
+            依目前選擇的單一出貨日期讀取完整訂單，再於獨立清單勾選。已匯出或已有宅配單號的訂單不會被全選。
+          </div>
           <button
             type="button"
-            class="shipping-tracking-import-submit"
-            id="shippingTrackingImportButton"
-            onclick="commitShippingTrackingImport()"
+            class="shipping-ezcat-export-button"
+            id="shippingEzcatPrepareButton"
+            onclick="openEzcatExportModal()"
             disabled
           >
-            確認寫入託運單號
+            準備匯出黑貓 CSV
           </button>
-        </div>
-        <div
-          class="shipping-tracking-import-feedback"
-          id="shippingTrackingImportFeedback"
-          aria-live="polite"
+          <div
+            class="shipping-ezcat-export-feedback"
+            id="shippingEzcatExportFeedback"
+            aria-live="polite"
+          >
+            請先選擇單一出貨日期
+          </div>
+        </section>
+
+        <section
+          class="shipping-tracking-import-panel"
+          aria-labelledby="shippingTrackingImportTitle"
         >
-          尚未選擇檔案
-        </div>
-        <div
-          class="shipping-tracking-import-summary"
-          id="shippingTrackingImportSummary"
-          hidden
-        ></div>
-        <div
-          class="shipping-tracking-import-list"
-          id="shippingTrackingImportList"
-          hidden
-        ></div>
-      </section>
+          <h3 id="shippingTrackingImportTitle">匯入黑貓貨態檔</h3>
+          <div class="shipping-print-note">
+            讀取黑貓匯出的 waybillstatus.csv，依訂單編號合併託運單號。先預覽、確認後才寫入；不會標記已寄出或發送通知。
+          </div>
+          <div class="shipping-tracking-import-actions">
+            <label class="shipping-tracking-file-label">
+              選擇貨態 CSV
+              <input
+                type="file"
+                id="shippingTrackingFileInput"
+                accept=".csv,text/csv"
+                onchange="handleShippingTrackingFileSelected(event)"
+              />
+            </label>
+            <button
+              type="button"
+              class="shipping-tracking-import-submit"
+              id="shippingTrackingImportButton"
+              onclick="commitShippingTrackingImport()"
+              disabled
+            >
+              確認寫入託運單號
+            </button>
+          </div>
+          <div
+            class="shipping-tracking-import-feedback"
+            id="shippingTrackingImportFeedback"
+            aria-live="polite"
+          >
+            尚未選擇檔案
+          </div>
+          <div
+            class="shipping-tracking-import-summary"
+            id="shippingTrackingImportSummary"
+            hidden
+          ></div>
+          <div
+            class="shipping-tracking-import-list"
+            id="shippingTrackingImportList"
+            hidden
+          ></div>
+        </section>
+      </div>
 
       <section
         class="shipping-manifest-panel is-empty"
@@ -3987,6 +4256,96 @@
         </div>
       </div>
     </section>
+
+    <div class="modal-overlay" id="ezcatExportModal">
+      <div class="modal-container ezcat-export-modal-container">
+        <div class="modal-header">
+          <div>
+            <h3>匯出黑貓出貨 CSV</h3>
+            <div class="shipping-print-note" id="ezcatExportModalDate"></div>
+          </div>
+          <button
+            type="button"
+            class="modal-close-btn"
+            aria-label="關閉黑貓匯出"
+            onclick="closeEzcatExportModal()"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="modal-body" id="ezcatExportModalBody">
+          <div class="ezcat-export-summary" id="ezcatExportSummary"></div>
+          <div id="ezcatExportSelectionView">
+            <div class="ezcat-export-toolbar">
+              <label>
+                <input
+                  type="checkbox"
+                  id="ezcatExportSelectAll"
+                  onchange="toggleEzcatExportSelectAll(this.checked)"
+                />
+                全選可匯出訂單
+              </label>
+              <span class="shipping-print-note">
+                已匯出或已有宅配單號者，需逐筆選擇重新匯出。
+              </span>
+            </div>
+            <div class="ezcat-export-list" id="ezcatExportCandidateList"></div>
+            <div
+              class="ezcat-export-list"
+              id="ezcatRecentBatchList"
+              style="margin-top: 16px"
+            ></div>
+          </div>
+          <div id="ezcatExportPreviewView" hidden>
+            <div class="shipping-print-note">
+              CSV 欄位依序為：訂單編號、收件人姓名、收件人電話、收件人地址、寄件人姓名、寄件人電話、收貨日期、代收貨款、希望配達時段、複數件。
+            </div>
+            <div class="ezcat-export-preview" id="ezcatExportPreviewList"></div>
+          </div>
+          <div
+            class="shipping-ezcat-export-feedback"
+            id="ezcatExportModalFeedback"
+            aria-live="polite"
+          ></div>
+        </div>
+        <div class="ezcat-export-modal-footer">
+          <button
+            type="button"
+            class="btn-modal-cancel"
+            id="ezcatExportBackButton"
+            onclick="backToEzcatExportSelection()"
+            hidden
+          >
+            返回調整
+          </button>
+          <button
+            type="button"
+            class="btn-modal-cancel"
+            onclick="closeEzcatExportModal()"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="ezcat-export-primary-button"
+            id="ezcatExportPreviewButton"
+            onclick="previewEzcatExportSelection()"
+            disabled
+          >
+            預覽已選訂單
+          </button>
+          <button
+            type="button"
+            class="ezcat-export-primary-button"
+            id="ezcatExportDownloadButton"
+            onclick="createAndDownloadEzcatExport()"
+            hidden
+          >
+            建立並下載 CSV
+          </button>
+        </div>
+      </div>
+    </div>
 
     <div class="modal-overlay" id="productAddModal">
       <div class="modal-container" style="max-width: 620px">
@@ -4468,6 +4827,11 @@
       let shippingManifestDateMode = "today";
       let shippingTrackingImportPreview = null;
       let shippingTrackingImportSubmitting = false;
+      let ezcatExportCandidates = [];
+      let ezcatExportRecentBatches = [];
+      const ezcatExportSelections = new Map();
+      let ezcatExportSubmitting = false;
+      let ezcatExportPreviewMode = false;
       const OPEN_NOTIFICATION_STATUSES = new Set([
         "pending_send",
         "failed",
@@ -10283,6 +10647,7 @@
           adminWorkflowIsValidDate(startDate) &&
           adminWorkflowIsValidDate(endDate) &&
           startDate <= endDate;
+        syncEzcatPrepareButton();
         const isRangeMode = shippingManifestDateMode === "range";
         const orders = hasValidDateRange
           ? getShippingManifestOrdersForRange(startDate, endDate)
@@ -10388,6 +10753,635 @@
         window.setTimeout(() => {
           window.print();
         }, 50);
+      }
+
+      function setEzcatExportFeedback(message, isError = false) {
+        const feedback = document.getElementById(
+          "shippingEzcatExportFeedback",
+        );
+        if (!feedback) return;
+        feedback.classList.toggle("is-error", isError);
+        feedback.innerText = String(message || "");
+      }
+
+      function syncEzcatPrepareButton() {
+        const button = document.getElementById("shippingEzcatPrepareButton");
+        if (!button) return;
+        const { startDate, endDate } = getShippingManifestDateRange();
+        const validSingleDate =
+          !!startDate &&
+          startDate === endDate &&
+          adminWorkflowIsValidDate(startDate);
+        button.disabled = !validSingleDate || ezcatExportSubmitting;
+        setEzcatExportFeedback(
+          validSingleDate
+            ? `目前準備日期：${formatShippingManifestDate(startDate)}`
+            : "黑貓匯出請先選擇單一出貨日期；日期區間只供列印總表使用。",
+          false,
+        );
+      }
+
+      function getEzcatExportErrorLabel(code) {
+        const labels = {
+          ORDER_CANCELLED: "訂單已取消",
+          RECIPIENT_NAME_REQUIRED: "收件人姓名未填",
+          RECIPIENT_PHONE_INVALID: "收件人電話格式不正確",
+          RECIPIENT_ADDRESS_REQUIRED: "收件地址未填",
+          SHIPPING_DATE_INVALID: "確定出貨日期不正確",
+          SENDER_PHONE_INVALID: "另填寄件人時，寄件電話格式不正確",
+          ORDER_NO_TOO_LONG: "訂單編號超過100字",
+          RECIPIENT_NAME_TOO_LONG: "收件人姓名超過100字",
+          RECIPIENT_ADDRESS_TOO_LONG: "收件地址超過100字",
+          SENDER_NAME_TOO_LONG: "寄件人姓名超過100字",
+          ORDER_NO_BIG5_INVALID: "訂單編號含Big5無法匯出的字元",
+          RECIPIENT_NAME_BIG5_INVALID: "收件人姓名含Big5無法匯出的字元",
+          RECIPIENT_ADDRESS_BIG5_INVALID: "收件地址含Big5無法匯出的字元",
+          SENDER_NAME_BIG5_INVALID: "寄件人姓名含Big5無法匯出的字元",
+        };
+        return labels[String(code || "")] || String(code || "資料異常");
+      }
+
+      function getEzcatReexportReasonLabel(reason) {
+        const labels = {
+          phone_or_address_changed: "電話或地址異動",
+          damaged_label: "宅配單列印破損",
+          rebuild_tracking: "作廢後重新建立託運資料",
+          other: "其他人工確認原因",
+        };
+        return labels[String(reason || "")] || "";
+      }
+
+      function getSelectedEzcatCandidates() {
+        const byOrderNo = new Map(
+          ezcatExportCandidates.map((candidate) => [
+            String(candidate?.orderNo || ""),
+            candidate,
+          ]),
+        );
+        return [...ezcatExportSelections.entries()]
+          .map(([orderNo, selection]) => ({
+            candidate: byOrderNo.get(orderNo),
+            selection,
+          }))
+          .filter((item) => item.candidate);
+      }
+
+      function updateEzcatExportSummary() {
+        const summary = document.getElementById("ezcatExportSummary");
+        const previewButton = document.getElementById(
+          "ezcatExportPreviewButton",
+        );
+        const selectAll = document.getElementById("ezcatExportSelectAll");
+        if (!summary) return;
+        const eligible = ezcatExportCandidates.filter(
+          (candidate) => candidate.eligibleDefault,
+        );
+        const invalid = ezcatExportCandidates.filter(
+          (candidate) => Array.isArray(candidate.errors) && candidate.errors.length,
+        );
+        const previous = ezcatExportCandidates.filter(
+          (candidate) => candidate.requiresReexportApproval,
+        );
+        const selected = getSelectedEzcatCandidates();
+        const packages = selected.reduce(
+          (sum, item) => sum + Number(item.candidate.packageCount || 1),
+          0,
+        );
+        summary.innerHTML = [
+          ["可首次匯出", `${eligible.length} 筆`],
+          ["需人工處理", `${invalid.length + previous.length} 筆`],
+          ["目前已選", `${selected.length} 筆`],
+          ["宅配總件數", `${packages} 件`],
+        ]
+          .map(
+            ([label, value]) => `
+              <div class="ezcat-export-summary-item">
+                <span>${escapeHtml(label)}</span>
+                <strong>${escapeHtml(value)}</strong>
+              </div>
+            `,
+          )
+          .join("");
+        if (previewButton) {
+          previewButton.disabled = ezcatExportSubmitting || selected.length === 0;
+        }
+        if (selectAll) {
+          const selectedEligibleCount = eligible.filter((candidate) =>
+            ezcatExportSelections.has(candidate.orderNo),
+          ).length;
+          selectAll.checked =
+            eligible.length > 0 && selectedEligibleCount === eligible.length;
+          selectAll.indeterminate =
+            selectedEligibleCount > 0 &&
+            selectedEligibleCount < eligible.length;
+        }
+      }
+
+      function renderEzcatRecentBatches() {
+        const container = document.getElementById("ezcatRecentBatchList");
+        if (!container) return;
+        if (!ezcatExportRecentBatches.length) {
+          container.innerHTML = "";
+          return;
+        }
+        container.innerHTML = `
+          <div class="shipping-print-note"><strong>最近匯出批次（重新下載不建立新批次）</strong></div>
+          ${ezcatExportRecentBatches
+            .map(
+              (batch) => `
+                <div class="ezcat-export-row is-previous">
+                  <div>📄</div>
+                  <div class="ezcat-export-row-main">
+                    <div class="ezcat-export-row-title">${escapeHtml(batch.fileName || batch.batchId)}</div>
+                    <div class="ezcat-export-row-detail">
+                      ${escapeHtml(batch.createdAt || "")}｜${escapeHtml(batch.orderCount || 0)} 筆｜${escapeHtml(batch.packageCount || 0)} 件｜${escapeHtml(batch.createdBy || "")}
+                    </div>
+                    <div class="ezcat-reexport-controls">
+                      <button
+                        type="button"
+                        class="ezcat-batch-download-button"
+                        onclick="redownloadEzcatBatch('${escapeHtml(batch.batchId || "")}')"
+                      >
+                        重新下載原檔
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              `,
+            )
+            .join("")}
+        `;
+      }
+
+      function renderEzcatExportCandidates() {
+        const list = document.getElementById("ezcatExportCandidateList");
+        if (!list) return;
+        if (!ezcatExportCandidates.length) {
+          list.innerHTML = `
+            <div class="shipping-manifest-empty">此日期沒有可供黑貓匯出的訂單。</div>
+          `;
+          renderEzcatRecentBatches();
+          updateEzcatExportSummary();
+          return;
+        }
+        list.innerHTML = ezcatExportCandidates
+          .map((candidate) => {
+            const errors = Array.isArray(candidate.errors)
+              ? candidate.errors
+              : [];
+            const orderNo = String(candidate.orderNo || "");
+            const selected = ezcatExportSelections.has(orderNo);
+            const selection = ezcatExportSelections.get(orderNo);
+            const previous = candidate.requiresReexportApproval;
+            const rowClass = errors.length
+              ? "is-error"
+              : previous
+                ? "is-previous"
+                : "";
+            const stateLines = [];
+            if (errors.length) {
+              stateLines.push(
+                errors.map(getEzcatExportErrorLabel).join("、"),
+              );
+            }
+            if (candidate.hasExportHistory) {
+              stateLines.push(
+                `已匯出：${candidate.lastExportBatchId || "有匯出紀錄"}${
+                  candidate.dataChangedAfterExport
+                    ? "（黑貓相關資料已異動）"
+                    : "（資料未異動；若只改寄出日期不需重印）"
+                }`,
+              );
+            }
+            if (candidate.hasTracking) {
+              stateLines.push(
+                `已有宅配單號：${(candidate.trackingNumbers || []).join("、")}`,
+              );
+            }
+            return `
+              <div class="ezcat-export-row ${rowClass}">
+                <div>
+                  <input
+                    type="checkbox"
+                    aria-label="選取 ${escapeHtml(orderNo)}"
+                    data-ezcat-order-checkbox="${escapeHtml(orderNo)}"
+                    ${selected ? "checked" : ""}
+                    ${errors.length || previous ? "disabled" : ""}
+                    onchange="toggleEzcatExportOrder('${escapeHtml(orderNo)}', this.checked)"
+                  />
+                </div>
+                <div class="ezcat-export-row-main">
+                  <div class="ezcat-export-row-title">
+                    ${escapeHtml(candidate.recipientName || "未填姓名")}｜${escapeHtml(orderNo)}
+                  </div>
+                  <div class="ezcat-export-row-detail">
+                    ${escapeHtml(candidate.recipientPhone || "電話異常")}｜${escapeHtml(candidate.recipientAddress || "地址未填")}<br>
+                    ${escapeHtml(candidate.packageCount || 1)} 件｜配達時段 ${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
+                    ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : ""}
+                  </div>
+                  ${
+                    stateLines.length
+                      ? `<div class="ezcat-export-row-state">${escapeHtml(stateLines.join("\n")).replace(/\n/g, "<br>")}</div>`
+                      : ""
+                  }
+                  ${
+                    previous && !errors.length
+                      ? `
+                        <div class="ezcat-reexport-controls">
+                          <select data-ezcat-reexport-reason="${escapeHtml(orderNo)}" aria-label="${escapeHtml(orderNo)} 重新匯出原因">
+                            <option value="">選擇重新匯出原因</option>
+                            <option value="phone_or_address_changed">電話或地址異動</option>
+                            <option value="damaged_label">宅配單列印破損</option>
+                            <option value="rebuild_tracking">作廢後重新建立託運資料</option>
+                            <option value="other">其他人工確認原因</option>
+                          </select>
+                          <button
+                            type="button"
+                            class="ezcat-reexport-button"
+                            onclick="toggleEzcatReexportOrder('${escapeHtml(orderNo)}')"
+                          >
+                            ${selection?.mode === "reexport" ? "取消重新匯出" : "加入重新匯出"}
+                          </button>
+                        </div>
+                      `
+                      : ""
+                  }
+                </div>
+              </div>
+            `;
+          })
+          .join("");
+        renderEzcatRecentBatches();
+        updateEzcatExportSummary();
+      }
+
+      function toggleEzcatExportOrder(orderNo, checked) {
+        const candidate = ezcatExportCandidates.find(
+          (item) => String(item.orderNo || "") === String(orderNo || ""),
+        );
+        if (!candidate || !candidate.eligibleDefault) return;
+        if (checked) {
+          ezcatExportSelections.set(candidate.orderNo, {
+            mode: "initial",
+            reason: "",
+          });
+        } else {
+          ezcatExportSelections.delete(candidate.orderNo);
+        }
+        updateEzcatExportSummary();
+      }
+
+      function toggleEzcatExportSelectAll(checked) {
+        ezcatExportCandidates.forEach((candidate) => {
+          if (!candidate.eligibleDefault) return;
+          if (checked) {
+            ezcatExportSelections.set(candidate.orderNo, {
+              mode: "initial",
+              reason: "",
+            });
+          } else {
+            ezcatExportSelections.delete(candidate.orderNo);
+          }
+        });
+        renderEzcatExportCandidates();
+      }
+
+      function toggleEzcatReexportOrder(orderNo) {
+        const existing = ezcatExportSelections.get(orderNo);
+        if (existing?.mode === "reexport") {
+          ezcatExportSelections.delete(orderNo);
+          renderEzcatExportCandidates();
+          return;
+        }
+        const select = [
+          ...document.querySelectorAll("[data-ezcat-reexport-reason]"),
+        ].find(
+          (element) =>
+            String(element.dataset.ezcatReexportReason || "") ===
+            String(orderNo || ""),
+        );
+        const reason = String(select?.value || "").trim();
+        if (!reason) {
+          const feedback = document.getElementById("ezcatExportModalFeedback");
+          if (feedback) {
+            feedback.classList.add("is-error");
+            feedback.innerText = "請先選擇重新匯出原因。";
+          }
+          return;
+        }
+        ezcatExportSelections.set(orderNo, {
+          mode: "reexport",
+          reason,
+        });
+        renderEzcatExportCandidates();
+      }
+
+      async function openEzcatExportModal() {
+        const { startDate, endDate } = getShippingManifestDateRange();
+        if (!startDate || startDate !== endDate) {
+          setEzcatExportFeedback(
+            "黑貓匯出請選擇單一出貨日期；日期區間只供列印總表使用。",
+            true,
+          );
+          return;
+        }
+        const modal = document.getElementById("ezcatExportModal");
+        const body = document.getElementById("ezcatExportModalBody");
+        const dateLabel = document.getElementById("ezcatExportModalDate");
+        const feedback = document.getElementById("ezcatExportModalFeedback");
+        if (!modal || !body) return;
+        modal.classList.add("open");
+        document.body.style.overflow = "hidden";
+        body.scrollTop = 0;
+        if (dateLabel) {
+          dateLabel.innerText = `確定出貨日期：${formatShippingManifestDate(startDate)}`;
+        }
+        if (feedback) {
+          feedback.classList.remove("is-error");
+          feedback.innerText = "正在讀取完整訂單與歷史匯出紀錄...";
+        }
+        ezcatExportCandidates = [];
+        ezcatExportRecentBatches = [];
+        ezcatExportSelections.clear();
+        ezcatExportPreviewMode = false;
+        setEzcatExportView(false);
+        updateEzcatExportSummary();
+
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+          closeEzcatExportModal();
+          return;
+        }
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminReadEzcatExportCandidates",
+              adminSessionToken,
+              startDate,
+              endDate,
+            }),
+          });
+          const payload = await response.json();
+          if (
+            !payload ||
+            payload.ok !== true ||
+            payload.action !== "adminReadEzcatExportCandidates" ||
+            !Array.isArray(payload.candidates)
+          ) {
+            throw new Error(
+              String(payload?.errorCode || "EZCAT_EXPORT_READ_FAILED"),
+            );
+          }
+          ezcatExportCandidates = payload.candidates.slice();
+          ezcatExportRecentBatches = Array.isArray(payload.recentBatches)
+            ? payload.recentBatches.slice()
+            : [];
+          ezcatExportCandidates.forEach((candidate) => {
+            if (candidate.eligibleDefault) {
+              ezcatExportSelections.set(candidate.orderNo, {
+                mode: "initial",
+                reason: "",
+              });
+            }
+          });
+          renderEzcatExportCandidates();
+          if (feedback) feedback.innerText = "";
+        } catch (error) {
+          console.error("讀取黑貓匯出清單失敗", error);
+          if (feedback) {
+            feedback.classList.add("is-error");
+            feedback.innerText =
+              String(error?.message || "") === "ADMIN_SESSION_REQUIRED"
+                ? "登入已過期，請重新登入 LINE。"
+                : "無法讀取黑貓匯出清單，請關閉後重新整理再試。";
+          }
+        }
+      }
+
+      function closeEzcatExportModal() {
+        if (ezcatExportSubmitting) return;
+        document.getElementById("ezcatExportModal")?.classList.remove("open");
+        document.body.style.overflow = "";
+        ezcatExportPreviewMode = false;
+      }
+
+      function setEzcatExportView(previewMode) {
+        ezcatExportPreviewMode = !!previewMode;
+        const selectionView = document.getElementById(
+          "ezcatExportSelectionView",
+        );
+        const previewView = document.getElementById("ezcatExportPreviewView");
+        const previewButton = document.getElementById(
+          "ezcatExportPreviewButton",
+        );
+        const downloadButton = document.getElementById(
+          "ezcatExportDownloadButton",
+        );
+        const backButton = document.getElementById("ezcatExportBackButton");
+        if (selectionView) selectionView.hidden = ezcatExportPreviewMode;
+        if (previewView) previewView.hidden = !ezcatExportPreviewMode;
+        if (previewButton) previewButton.hidden = ezcatExportPreviewMode;
+        if (downloadButton) downloadButton.hidden = !ezcatExportPreviewMode;
+        if (backButton) backButton.hidden = !ezcatExportPreviewMode;
+      }
+
+      function previewEzcatExportSelection() {
+        const selected = getSelectedEzcatCandidates();
+        if (!selected.length) return;
+        const list = document.getElementById("ezcatExportPreviewList");
+        const feedback = document.getElementById("ezcatExportModalFeedback");
+        if (!list) return;
+        list.innerHTML = selected
+          .map(
+            ({ candidate, selection }) => `
+              <div class="ezcat-export-preview-row">
+                <strong>${escapeHtml(candidate.recipientName || "")}<br>${escapeHtml(candidate.orderNo || "")}</strong>
+                <div>
+                  ${escapeHtml(candidate.recipientPhone || "")}｜${escapeHtml(candidate.recipientAddress || "")}<br>
+                  ${escapeHtml(candidate.packageCount || 1)} 件｜${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
+                  ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : "｜無代收"}<br>
+                  ${selection.mode === "reexport" ? `重新匯出：${escapeHtml(getEzcatReexportReasonLabel(selection.reason))}` : "首次匯出"}
+                </div>
+              </div>
+            `,
+          )
+          .join("");
+        if (feedback) {
+          const codOrders = selected.filter(
+            (item) => item.candidate.codAmount !== "",
+          );
+          const codTotal = codOrders.reduce(
+            (sum, item) => sum + Number(item.candidate.codAmount || 0),
+            0,
+          );
+          feedback.classList.remove("is-error");
+          feedback.innerText =
+            `即將建立 ${selected.length} 筆、共 ${selected.reduce(
+              (sum, item) =>
+                sum + Number(item.candidate.packageCount || 1),
+              0,
+            )} 件的CP950／Big5 CSV。貨到付款 ${codOrders.length} 筆，代收總額 $${formatAdminMoney(codTotal)}。下載前後端會再次驗證最新資料。`;
+        }
+        setEzcatExportView(true);
+        document.getElementById("ezcatExportModalBody")?.scrollTo?.(0, 0);
+      }
+
+      function backToEzcatExportSelection() {
+        setEzcatExportView(false);
+        const feedback = document.getElementById("ezcatExportModalFeedback");
+        if (feedback) feedback.innerText = "";
+      }
+
+      function downloadEzcatBase64File(base64, fileName, mimeType) {
+        const binary = atob(String(base64 || ""));
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) {
+          bytes[index] = binary.charCodeAt(index);
+        }
+        const url = URL.createObjectURL(
+          new Blob([bytes], { type: mimeType || "text/csv" }),
+        );
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = String(fileName || "EZCAT.csv");
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      }
+
+      async function createAndDownloadEzcatExport() {
+        if (ezcatExportSubmitting) return;
+        const selected = getSelectedEzcatCandidates();
+        const { startDate, endDate } = getShippingManifestDateRange();
+        if (!selected.length || !startDate || startDate !== endDate) return;
+        const downloadButton = document.getElementById(
+          "ezcatExportDownloadButton",
+        );
+        const feedback = document.getElementById("ezcatExportModalFeedback");
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+          return;
+        }
+        ezcatExportSubmitting = true;
+        if (downloadButton) downloadButton.disabled = true;
+        if (feedback) feedback.innerText = "正在重新驗證並建立匯出批次...";
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminCreateEzcatExportBatch",
+              adminSessionToken,
+              startDate,
+              endDate,
+              selections: selected.map(({ candidate, selection }) => ({
+                orderNo: candidate.orderNo,
+                mode: selection.mode,
+                reason: selection.reason,
+              })),
+            }),
+          });
+          const payload = await response.json();
+          if (
+            !payload ||
+            payload.ok !== true ||
+            payload.action !== "adminCreateEzcatExportBatch" ||
+            !payload.csvBase64 ||
+            !payload.batch?.fileName
+          ) {
+            throw new Error(
+              String(payload?.errorCode || "EZCAT_EXPORT_CREATE_FAILED"),
+            );
+          }
+          downloadEzcatBase64File(
+            payload.csvBase64,
+            payload.batch.fileName,
+            payload.mimeType,
+          );
+          setEzcatExportFeedback(
+            `已建立 ${payload.batch.fileName}：${payload.batch.orderCount} 筆、${payload.batch.packageCount} 件。若手機沒有找到檔案，可從最近批次重新下載。`,
+          );
+          ezcatExportSubmitting = false;
+          closeEzcatExportModal();
+        } catch (error) {
+          console.error("建立黑貓匯出批次失敗", error);
+          if (feedback) {
+            feedback.classList.add("is-error");
+            const errorCode = String(error?.message || "");
+            feedback.innerText =
+              errorCode === "ORDER_NOT_EXPORTABLE"
+                ? "部分訂單資料已變更或不再符合匯出條件，請返回重新讀取清單。"
+                : errorCode === "REEXPORT_APPROVAL_REQUIRED"
+                  ? "部分訂單已匯出或已有宅配單號，必須逐筆選擇重新匯出原因。"
+                  : "CSV建立失敗，尚未確認產生完整批次；請重新整理後再試。";
+          }
+        } finally {
+          ezcatExportSubmitting = false;
+          if (downloadButton) downloadButton.disabled = false;
+        }
+      }
+
+      async function redownloadEzcatBatch(batchId) {
+        if (ezcatExportSubmitting || !batchId) return;
+        const feedback = document.getElementById("ezcatExportModalFeedback");
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+          return;
+        }
+        ezcatExportSubmitting = true;
+        if (feedback) feedback.innerText = "正在重新取得原始批次檔案...";
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminDownloadEzcatExportBatch",
+              adminSessionToken,
+              batchId,
+            }),
+          });
+          const payload = await response.json();
+          if (
+            !payload ||
+            payload.ok !== true ||
+            payload.action !== "adminDownloadEzcatExportBatch" ||
+            !payload.csvBase64 ||
+            !payload.batch?.fileName
+          ) {
+            throw new Error(
+              String(payload?.errorCode || "EZCAT_BATCH_DOWNLOAD_FAILED"),
+            );
+          }
+          downloadEzcatBase64File(
+            payload.csvBase64,
+            payload.batch.fileName,
+            payload.mimeType,
+          );
+          if (feedback) {
+            feedback.classList.remove("is-error");
+            feedback.innerText = `已重新下載 ${payload.batch.fileName}，未建立新批次。`;
+          }
+        } catch (error) {
+          console.error("重新下載黑貓批次失敗", error);
+          if (feedback) {
+            feedback.classList.add("is-error");
+            feedback.innerText = "無法重新下載此批次，請重新整理後再試。";
+          }
+        } finally {
+          ezcatExportSubmitting = false;
+        }
       }
 
       function setShippingTrackingImportFeedback(message, isError = false) {
