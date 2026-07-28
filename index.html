@@ -632,14 +632,33 @@
       }
 
       .ezcat-export-preview-row {
-        display: grid;
-        grid-template-columns: minmax(110px, 0.8fr) minmax(0, 2fr);
-        gap: 8px;
         border-bottom: 1px solid #e2e8f0;
-        padding: 8px 0;
+        padding: 10px 0;
         color: #334155;
         font-size: 12px;
         line-height: 1.5;
+      }
+
+      .ezcat-export-preview-title {
+        color: #1f2937;
+        font-size: 14px;
+        font-weight: 900;
+      }
+
+      .ezcat-export-review-lines {
+        margin-top: 4px;
+        color: #64748b;
+        font-weight: 700;
+        overflow-wrap: anywhere;
+      }
+
+      .ezcat-export-review-line.is-product,
+      .ezcat-export-review-line.is-package {
+        color: #334155;
+      }
+
+      .ezcat-export-review-line.is-exception {
+        color: #92400e;
       }
 
       .ezcat-export-modal-footer {
@@ -10900,6 +10919,109 @@
         return labels[String(reason || "")] || "";
       }
 
+      function getEzcatReviewProductLines(candidate) {
+        const itemsSummary = String(
+          candidate?.fields?.itemsSummary || "",
+        ).trim();
+        const parsed = parseShippingManifestItems(itemsSummary);
+        if (parsed.reliable) {
+          return parsed.items.map(
+            (item) => `${item.label} × ${item.qty}盒`,
+          );
+        }
+        return itemsSummary
+          .split(/\r?\n/)
+          .map((line) =>
+            line
+              .trim()
+              .replace(
+                /[（(]\s*\$[\d,]+\s*[×xX*]\s*(\d+)\s*盒\s*[）)]/g,
+                " × $1盒",
+              ),
+          )
+          .filter(Boolean);
+      }
+
+      function getEzcatReviewPackageLines(candidate) {
+        const specs = Array.isArray(candidate?.packageSpecs)
+          ? candidate.packageSpecs
+          : [];
+        const totalBoxes = Number(
+          String(candidate?.fields?.totalBoxes || "").trim(),
+        );
+        let remainingBoxes =
+          Number.isInteger(totalBoxes) && totalBoxes > 0
+            ? totalBoxes
+            : null;
+        return specs.map((spec, index) => {
+          const boxesInPackage =
+            remainingBoxes === null ? null : Math.min(3, remainingBoxes);
+          if (remainingBoxes !== null) remainingBoxes -= boxesInPackage;
+          const parts = [
+            `包裹${index + 1}：${
+              boxesInPackage === null ? "" : `${boxesInPackage}盒｜`
+            }${String(spec) === "2" ? "90cm" : "120cm"}`,
+          ];
+          if (index === 0 && candidate.codAmount !== "") {
+            parts.push(`代收 $${formatAdminMoney(candidate.codAmount)}`);
+          }
+          return parts.join("｜");
+        });
+      }
+
+      function buildEzcatReviewLinesHtml(candidate, selection) {
+        const lines = [
+          {
+            text: `${candidate.recipientPhone || "電話異常"}｜${
+              candidate.recipientAddress || "地址未填"
+            }`,
+            className: "",
+          },
+        ];
+        const productLines = getEzcatReviewProductLines(candidate);
+        productLines.forEach((line, index) => {
+          lines.push({
+            text: `${index === 0 ? "商品：" : "　　　"}${line}`,
+            className: "is-product",
+          });
+        });
+        getEzcatReviewPackageLines(candidate).forEach((line) => {
+          lines.push({ text: line, className: "is-package" });
+        });
+      if (["1", "2"].includes(String(candidate.deliveryTimeSlot || ""))) {
+          lines.push({
+            text: `配達時段：${formatAdminDeliveryTimeSlotLabel(
+              candidate.deliveryTimeSlot,
+            )}`,
+            className: "is-exception",
+          });
+        }
+        if (candidate.senderName) {
+          lines.push({
+            text: `寄件人：${candidate.senderName}${
+              candidate.senderPhone ? `｜${candidate.senderPhone}` : ""
+            }`,
+            className: "is-exception",
+          });
+        }
+        if (selection?.mode === "reexport") {
+          lines.push({
+            text: `重新匯出：${getEzcatReexportReasonLabel(
+              selection.reason,
+            )}`,
+            className: "is-exception",
+          });
+        }
+        return lines
+          .map(
+            (line) =>
+              `<div class="ezcat-export-review-line ${line.className}">${escapeHtml(
+                line.text,
+              )}</div>`,
+          )
+          .join("");
+      }
+
       function getSelectedEzcatCandidates() {
         const byOrderNo = new Map(
           ezcatExportCandidates.map((candidate) => [
@@ -11069,14 +11191,8 @@
                   <div class="ezcat-export-row-title">
                     ${escapeHtml(candidate.recipientName || "未填姓名")}｜${escapeHtml(orderNo)}
                   </div>
-                  <div class="ezcat-export-row-detail">
-                    ${escapeHtml(candidate.recipientPhone || "電話異常")}｜${escapeHtml(candidate.recipientAddress || "地址未填")}<br>
-                    ${escapeHtml(candidate.packageCount || 1)} 件｜尺寸 ${escapeHtml(
-                      (candidate.packageSpecs || [])
-                        .map((spec) => (String(spec) === "2" ? "90cm" : "120cm"))
-                        .join("＋") || "無法判斷",
-                    )}｜配達時段 ${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
-                    ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : ""}
+                  <div class="ezcat-export-row-detail ezcat-export-review-lines">
+                    ${buildEzcatReviewLinesHtml(candidate, selection)}
                   </div>
                   ${
                     stateLines.length
@@ -11322,16 +11438,11 @@
           .map(
             ({ candidate, selection }) => `
               <div class="ezcat-export-preview-row">
-                <strong>${escapeHtml(candidate.recipientName || "")}<br>${escapeHtml(candidate.orderNo || "")}</strong>
-                <div>
-                  ${escapeHtml(candidate.recipientPhone || "")}｜${escapeHtml(candidate.recipientAddress || "")}<br>
-                  ${escapeHtml(candidate.packageCount || 1)} 件｜尺寸 ${escapeHtml(
-                    (candidate.packageSpecs || [])
-                      .map((spec) => (String(spec) === "2" ? "90cm" : "120cm"))
-                      .join("＋") || "無法判斷",
-                  )}｜${escapeHtml(formatAdminDeliveryTimeSlotLabel(candidate.deliveryTimeSlot))}
-                  ${candidate.codAmount !== "" ? `｜代收 $${escapeHtml(formatAdminMoney(candidate.codAmount))}` : "｜無代收"}<br>
-                  ${selection.mode === "reexport" ? `重新匯出：${escapeHtml(getEzcatReexportReasonLabel(selection.reason))}` : "首次匯出"}
+                <div class="ezcat-export-preview-title">
+                  ${escapeHtml(candidate.recipientName || "")}｜${escapeHtml(candidate.orderNo || "")}
+                </div>
+                <div class="ezcat-export-review-lines">
+                  ${buildEzcatReviewLinesHtml(candidate, selection)}
                 </div>
               </div>
             `,
