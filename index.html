@@ -626,6 +626,23 @@
         color: #704214;
       }
 
+      .ezcat-other-batches {
+        margin-top: 10px;
+      }
+
+      .ezcat-other-batches summary {
+        cursor: pointer;
+        color: #64748b;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .ezcat-other-batches-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
       .ezcat-export-preview {
         display: grid;
         gap: 8px;
@@ -3165,7 +3182,7 @@
           white-space: nowrap;
         }
         .shipping-tracking-segment {
-          width: 9mm;
+          width: 8mm;
           border-bottom: 1px solid #000000 !important;
         }
         .shipping-manifest-row-date {
@@ -4187,7 +4204,7 @@
                 <th>訂單金額</th>
                 <th>寄件人</th>
                 <th>備註</th>
-                <th>黑貓寄貨編號</th>
+                <th>尺寸／黑貓寄貨編號</th>
               </tr>
             </thead>
             <tbody id="shippingManifestTableBody"></tbody>
@@ -6995,7 +7012,7 @@
         );
         const trackingNoRow = buildReadOnlyExtraRow(
           "宅配單號",
-          order?.trackingNo,
+          formatStoredShippingTrackingNumbersForDisplay(order?.trackingNo),
         );
         const canEditContent = ["待確認", "已安排出貨", "已寄出"].includes(
           orderStatus,
@@ -10382,17 +10399,18 @@
             );
           })
           .sort((a, b) => {
-            const dateCompare = normalizeAdminDateValue(
-              a?.expectedShippingDate || "",
-            ).localeCompare(
-              normalizeAdminDateValue(b?.expectedShippingDate || ""),
-            );
-            if (dateCompare !== 0) return dateCompare;
-            const nameCompare = String(a?.recipientName || "").localeCompare(
-              String(b?.recipientName || ""),
-              "zh-Hant",
-            );
-            if (nameCompare !== 0) return nameCompare;
+            const aTime = Date.parse(String(a?.createdAt || ""));
+            const bTime = Date.parse(String(b?.createdAt || ""));
+            if (Number.isFinite(aTime) && Number.isFinite(bTime) && aTime !== bTime) {
+              return aTime - bTime;
+            }
+            if (Number.isFinite(aTime) !== Number.isFinite(bTime)) {
+              return Number.isFinite(aTime) ? -1 : 1;
+            }
+            const sourceIndexDifference =
+              Number(a?._manifestSourceIndex || 0) -
+              Number(b?._manifestSourceIndex || 0);
+            if (sourceIndexDifference !== 0) return sourceIndexDifference;
             return String(a?.orderNo || "").localeCompare(
               String(b?.orderNo || ""),
               "zh-Hant",
@@ -10448,10 +10466,13 @@
             ? payload.recentBatches.slice()
             : [];
           shippingManifestRemoteOrders = payload.candidates.map(
-            (candidate) => {
+            (candidate, candidateIndex) => {
               const manifest = candidate.fields || candidate;
               return {
                 orderNo: candidate.orderNo,
+                createdAt: manifest.createdAt,
+                orderSource: manifest.orderSource,
+                _manifestSourceIndex: candidateIndex,
                 recipientName: candidate.recipientName,
                 recipientPhone: candidate.recipientPhone,
                 recipientAddress: candidate.recipientAddress,
@@ -10684,21 +10705,29 @@
         const trackingNumbers = getActiveShippingTrackingNumbersFromStoredValue(
           order?.trackingNo,
         );
+        const packageSizes = [];
+        let remainingBoxes = boxCount;
+        while (remainingBoxes > 0) {
+          const boxesInPackage = Math.min(3, remainingBoxes);
+          packageSizes.push(boxesInPackage === 1 ? "90cm" : "120cm");
+          remainingBoxes -= boxesInPackage;
+        }
         const slotCount = Math.max(
           1,
-          Math.ceil(boxCount / 3),
+          packageSizes.length,
           trackingNumbers.length,
         );
         return `
           <div class="shipping-tracking-list">
             ${Array.from({ length: slotCount }, (_, index) => {
               const trackingNumber = trackingNumbers[index] || "";
+              const packageSize = packageSizes[index] || "尺寸待確認";
               return `
                 <div class="shipping-tracking-line">
-                  <span>${escapeHtml(index + 1)}：</span>
+                  <span>${escapeHtml(packageSize)}｜</span>
                   ${
                     trackingNumber
-                      ? `<span class="shipping-tracking-number">${escapeHtml(trackingNumber)}</span>`
+                      ? `<span class="shipping-tracking-number">${escapeHtml(formatShippingTrackingNumberForDisplay(trackingNumber))}</span>`
                       : `
                         <span class="shipping-tracking-segment"></span>
                         <span>-</span>
@@ -10718,9 +10747,9 @@
         const notes = [];
         const customerNote = String(order?.customerNote || "").trim();
         const adminNote = String(order?.adminNote || "").trim();
-        if (customerNote) notes.push(`客戶備註：${customerNote}`);
-        if (adminNote) notes.push(`管理員備註：${adminNote}`);
-        return notes.join("\n");
+        if (customerNote) notes.push(customerNote);
+        if (adminNote) notes.push(adminNote);
+        return notes.join("／");
       }
 
       function renderShippingManifest() {
@@ -10807,9 +10836,11 @@
           .map((order, index) => {
             const note = getShippingManifestNote(order);
             const senderName = String(order?.buyerName || "").trim();
+            const isLineOrder =
+              String(order?.orderSource || "").trim() === "LINE表單";
             return `
               <tr>
-                <td class="cell-center">${escapeHtml(index + 1)}${
+                <td class="cell-center">${isLineOrder ? "＠" : escapeHtml(index + 1)}${
                   isRangeMode
                     ? `<span class="shipping-manifest-row-date">${escapeHtml(formatShippingManifestRowDate(order?.expectedShippingDate || ""))}</span>`
                     : ""
@@ -10988,7 +11019,7 @@
         getEzcatReviewPackageLines(candidate).forEach((line) => {
           lines.push({ text: line, className: "is-package" });
         });
-      if (["1", "2"].includes(String(candidate.deliveryTimeSlot || ""))) {
+        if (["1", "2"].includes(String(candidate.deliveryTimeSlot || ""))) {
           lines.push({
             text: `配達時段：${formatAdminDeliveryTimeSlotLabel(
               candidate.deliveryTimeSlot,
@@ -11095,32 +11126,60 @@
           container.innerHTML = "";
           return;
         }
+        const { startDate, endDate } = getShippingManifestDateRange();
+        const selectedDate =
+          startDate && startDate === endDate ? startDate : "";
+        const selectedDateBatches = ezcatExportRecentBatches.filter(
+          (batch) =>
+            normalizeAdminDateValue(batch?.startDate || "") === selectedDate &&
+            normalizeAdminDateValue(batch?.endDate || "") === selectedDate,
+        );
+        const otherDateBatches = ezcatExportRecentBatches.filter(
+          (batch) => !selectedDateBatches.includes(batch),
+        );
+        const buildBatchHtml = (batch) => `
+          <div class="ezcat-export-row is-previous">
+            <div>📄</div>
+            <div class="ezcat-export-row-main">
+              <div class="ezcat-export-row-title">${escapeHtml(batch.fileName || batch.batchId)}</div>
+              <div class="ezcat-export-row-detail">
+                ${escapeHtml(batch.createdAt || "")}｜${escapeHtml(batch.orderCount || 0)} 筆｜${escapeHtml(batch.packageCount || 0)} 件｜${escapeHtml(batch.createdBy || "")}
+              </div>
+              <div class="ezcat-reexport-controls">
+                <button
+                  type="button"
+                  class="ezcat-batch-download-button"
+                  onclick="redownloadEzcatBatch('${escapeHtml(batch.batchId || "")}')"
+                >
+                  重新下載原檔
+                </button>
+              </div>
+            </div>
+          </div>
+        `;
         container.innerHTML = `
-          <div class="shipping-print-note"><strong>最近匯出批次（重新下載不建立新批次）</strong></div>
-          ${ezcatExportRecentBatches
-            .map(
-              (batch) => `
-                <div class="ezcat-export-row is-previous">
-                  <div>📄</div>
-                  <div class="ezcat-export-row-main">
-                    <div class="ezcat-export-row-title">${escapeHtml(batch.fileName || batch.batchId)}</div>
-                    <div class="ezcat-export-row-detail">
-                      ${escapeHtml(batch.createdAt || "")}｜${escapeHtml(batch.orderCount || 0)} 筆｜${escapeHtml(batch.packageCount || 0)} 件｜${escapeHtml(batch.createdBy || "")}
-                    </div>
-                    <div class="ezcat-reexport-controls">
-                      <button
-                        type="button"
-                        class="ezcat-batch-download-button"
-                        onclick="redownloadEzcatBatch('${escapeHtml(batch.batchId || "")}')"
-                      >
-                        重新下載原檔
-                      </button>
-                    </div>
+          <div class="shipping-print-note"><strong>${escapeHtml(
+            selectedDate
+              ? `${formatShippingManifestDate(selectedDate)} 的匯出紀錄`
+              : "最近匯出批次",
+          )}（重新下載不建立新批次）</strong></div>
+          ${
+            selectedDateBatches.length
+              ? selectedDateBatches.map(buildBatchHtml).join("")
+              : '<div class="ezcat-export-row-detail">此日期尚無匯出紀錄。</div>'
+          }
+          ${
+            otherDateBatches.length
+              ? `
+                <details class="ezcat-other-batches">
+                  <summary>查看其他日期的匯出紀錄（${escapeHtml(otherDateBatches.length)}）</summary>
+                  <div class="ezcat-other-batches-list">
+                    ${otherDateBatches.map(buildBatchHtml).join("")}
                   </div>
-                </div>
-              `,
-            )
-            .join("")}
+                </details>
+              `
+              : ""
+          }
         `;
       }
 
@@ -11705,6 +11764,28 @@
           .replace(/^'+/, "")
           .replace(/[\s-]+/g, "");
         return /^\d{10,12}$/.test(normalized) ? normalized : "";
+      }
+
+      function formatShippingTrackingNumberForDisplay(value) {
+        const normalized = normalizeShippingTrackingNumber(value);
+        if (!normalized) return String(value || "").trim();
+        if (normalized.length === 12) {
+          return normalized.replace(/(\d{4})(\d{4})(\d{4})/, "$1-$2-$3");
+        }
+        return normalized;
+      }
+
+      function formatStoredShippingTrackingNumbersForDisplay(value) {
+        const entries = getShippingTrackingEntriesFromStoredValue(value);
+        if (!entries.length) return String(value || "").trim();
+        return entries
+          .map(
+            (entry) =>
+              `${formatShippingTrackingNumberForDisplay(entry.trackingNo)}${
+                entry.voided ? "（作廢）" : ""
+              }`,
+          )
+          .join("\n");
       }
 
       function getShippingTrackingNumbersFromStoredValue(value) {
