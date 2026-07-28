@@ -10421,21 +10421,24 @@
           }
           shippingManifestRemoteRangeKey = rangeKey;
           shippingManifestRemoteOrders = payload.candidates.map(
-            (candidate) => ({
-              orderNo: candidate.orderNo,
-              recipientName: candidate.recipientName,
-              recipientPhone: candidate.recipientPhone,
-              recipientAddress: candidate.recipientAddress,
-              buyerName: candidate.buyerName,
-              itemsSummary: candidate.itemsSummary,
-              totalBoxes: candidate.totalBoxes,
-              finalAmount: candidate.finalAmount,
-              expectedShippingDate: candidate.expectedShippingDate,
-              customerNote: candidate.customerNote,
-              orderStatus: candidate.orderStatus,
-              adminNote: candidate.adminNote,
-              trackingNo: candidate.trackingNo,
-            }),
+            (candidate) => {
+              const manifest = candidate.fields || candidate;
+              return {
+                orderNo: candidate.orderNo,
+                recipientName: candidate.recipientName,
+                recipientPhone: candidate.recipientPhone,
+                recipientAddress: candidate.recipientAddress,
+                buyerName: manifest.buyerName,
+                itemsSummary: manifest.itemsSummary,
+                totalBoxes: manifest.totalBoxes,
+                finalAmount: manifest.finalAmount,
+                expectedShippingDate: manifest.expectedShippingDate,
+                customerNote: manifest.customerNote,
+                orderStatus: manifest.orderStatus,
+                adminNote: manifest.adminNote,
+                trackingNo: manifest.trackingNo,
+              };
+            },
           );
           renderShippingManifest();
         } catch (error) {
