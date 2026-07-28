@@ -10662,7 +10662,7 @@
 
       function buildShippingTrackingNumberSlotsHtml(order) {
         const boxCount = getShippingManifestOrderBoxCount(order);
-        const trackingNumbers = getShippingTrackingNumbersFromStoredValue(
+        const trackingNumbers = getActiveShippingTrackingNumbersFromStoredValue(
           order?.trackingNo,
         );
         const slotCount = Math.max(
@@ -10877,6 +10877,7 @@
           SHIPPING_DATE_INVALID: "確定出貨日期不正確",
           SENDER_PHONE_INVALID: "另填寄件人時，寄件電話格式不正確",
           PACKAGE_SIZE_UNDETERMINED: "商品總盒數異常，無法判斷包裹尺寸",
+          EXISTING_TRACKING_VALUE_INVALID: "既有宅配單號格式異常",
           ORDER_NO_TOO_LONG: "訂單編號超過100字",
           RECIPIENT_NAME_TOO_LONG: "收件人姓名超過100字",
           RECIPIENT_ADDRESS_TOO_LONG: "收件地址超過100字",
@@ -11043,7 +11044,13 @@
             }
             if (candidate.hasTracking) {
               stateLines.push(
-                `已有宅配單號：${(candidate.trackingNumbers || []).join("、")}`,
+                `已有宅配單號：${(candidate.trackingNumbers || [])
+                  .map((number) =>
+                    (candidate.voidedTrackingNumbers || []).includes(number)
+                      ? `${number}（作廢）`
+                      : number,
+                  )
+                  .join("、")}`,
               );
             }
             return `
@@ -11427,8 +11434,9 @@
             payload.mimeType,
           );
           setEzcatExportFeedback(
-            `已建立 ${payload.batch.fileName}：${payload.batch.orderCount} 筆、${payload.batch.packageCount} 件。若手機沒有找到檔案，可從最近批次重新下載。`,
+            `已建立 ${payload.batch.fileName}：${payload.batch.orderCount} 筆、${payload.batch.packageCount} 件。若屬電話／地址異動、破損重印或作廢重建，原宅配單號已標記作廢。若手機沒有找到檔案，可從最近批次重新下載。`,
           );
+          await refreshAdminOrdersAfterBatch();
           ezcatExportSubmitting = false;
           closeEzcatExportModal();
         } catch (error) {
@@ -11589,8 +11597,38 @@
       }
 
       function getShippingTrackingNumbersFromStoredValue(value) {
-        const matches = String(value || "").match(/\d{10,12}/g) || [];
-        return [...new Set(matches.map(normalizeShippingTrackingNumber).filter(Boolean))];
+        return getShippingTrackingEntriesFromStoredValue(value).map(
+          (entry) => entry.trackingNo,
+        );
+      }
+
+      function getActiveShippingTrackingNumbersFromStoredValue(value) {
+        return getShippingTrackingEntriesFromStoredValue(value)
+          .filter((entry) => !entry.voided)
+          .map((entry) => entry.trackingNo);
+      }
+
+      function getShippingTrackingEntriesFromStoredValue(value) {
+        const entries = [];
+        const pattern =
+          /'?(\d{10,12})(?:(?:\(作廢\))|(?:（作廢）))?/g;
+        const raw = String(value || "");
+        let match;
+        while ((match = pattern.exec(raw))) {
+          const trackingNo = normalizeShippingTrackingNumber(match[1]);
+          if (!trackingNo) continue;
+          const matchedText = String(match[0] || "");
+          const voided = /(?:\(作廢\))|(?:（作廢）)$/.test(matchedText);
+          const existing = entries.find(
+            (entry) => entry.trackingNo === trackingNo,
+          );
+          if (existing) {
+            existing.voided = existing.voided || voided;
+          } else {
+            entries.push({ trackingNo, voided });
+          }
+        }
+        return entries;
       }
 
       function renderShippingTrackingImportPreview(preview) {
