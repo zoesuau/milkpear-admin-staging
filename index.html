@@ -597,6 +597,25 @@
         background: #fffbeb;
       }
 
+      .ezcat-export-row input[data-ezcat-order-checkbox] {
+        accent-color: #2563eb;
+      }
+
+      .ezcat-export-row input[data-ezcat-order-checkbox]:checked:disabled {
+        -webkit-appearance: none;
+        appearance: none;
+        width: 13px;
+        height: 13px;
+        margin: 3px 3px 3px 4px;
+        border: 1px solid #2563eb;
+        border-radius: 3px;
+        background-color: #2563eb;
+        background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round' d='M2.2 6.2 4.8 8.6 9.8 3.4'/%3E%3C/svg%3E");
+        background-position: center;
+        background-repeat: no-repeat;
+        opacity: 1;
+      }
+
       .ezcat-export-row-main {
         min-width: 0;
       }
@@ -695,6 +714,23 @@
 
       .ezcat-export-review-line.is-exception {
         color: #92400e;
+      }
+
+      .ezcat-export-cod-amount {
+        color: #b42318;
+        font-weight: 900;
+      }
+
+      .ezcat-export-row.ezcat-export-batch-row {
+        border: 0;
+        border-radius: 0;
+        border-bottom: 1px solid #e2e8f0;
+        background: transparent;
+        padding: 10px 0;
+      }
+
+      .ezcat-export-row.ezcat-export-batch-row:last-child {
+        border-bottom: 0;
       }
 
       .ezcat-export-modal-footer {
@@ -11007,15 +11043,14 @@
           const boxesInPackage =
             remainingBoxes === null ? null : Math.min(3, remainingBoxes);
           if (remainingBoxes !== null) remainingBoxes -= boxesInPackage;
-          const parts = [
-            `包裹${index + 1}：${
-              boxesInPackage === null ? "" : `${boxesInPackage}盒｜`
-            }${String(spec) === "2" ? "90cm" : "120cm"}`,
-          ];
-          if (index === 0 && candidate.codAmount !== "") {
-            parts.push(`代收 $${formatAdminMoney(candidate.codAmount)}`);
-          }
-          return parts.join("｜");
+          const packageText = `包裹${index + 1}：${
+            boxesInPackage === null ? "" : `${boxesInPackage}盒｜`
+          }${String(spec) === "2" ? "90cm" : "120cm"}`;
+          const codText =
+            index === 0 && candidate.codAmount !== ""
+              ? `代收 $${formatAdminMoney(candidate.codAmount)}`
+              : "";
+          return { packageText, codText };
         });
       }
 
@@ -11036,7 +11071,15 @@
           });
         });
         getEzcatReviewPackageLines(candidate).forEach((line) => {
-          lines.push({ text: line, className: "is-package" });
+          lines.push({
+            text: line.packageText,
+            html: `${escapeHtml(line.packageText)}${
+              line.codText
+                ? `｜<span class="ezcat-export-cod-amount">${escapeHtml(line.codText)}</span>`
+                : ""
+            }`,
+            className: "is-package",
+          });
         });
         if (["1", "2"].includes(String(candidate.deliveryTimeSlot || ""))) {
           lines.push({
@@ -11065,9 +11108,9 @@
         return lines
           .map(
             (line) =>
-              `<div class="ezcat-export-review-line ${line.className}">${escapeHtml(
-                line.text,
-              )}</div>`,
+              `<div class="ezcat-export-review-line ${line.className}">${
+                line.html || escapeHtml(line.text)
+              }</div>`,
           )
           .join("");
       }
@@ -11157,7 +11200,7 @@
           (batch) => !selectedDateBatches.includes(batch),
         );
         const buildBatchHtml = (batch) => `
-          <div class="ezcat-export-row is-previous">
+          <div class="ezcat-export-row ezcat-export-batch-row">
             <div>📄</div>
             <div class="ezcat-export-row-main">
               <div class="ezcat-export-row-title">${escapeHtml(batch.fileName || batch.batchId)}</div>
@@ -11414,7 +11457,13 @@
 
       function applyEzcatExportCandidateData(candidates, recentBatches) {
         ezcatExportCandidates = Array.isArray(candidates)
-          ? candidates.slice()
+          ? candidates.filter(
+              (candidate) =>
+                !(
+                  Array.isArray(candidate?.errors) &&
+                  candidate.errors.includes("ORDER_CANCELLED")
+                ),
+            )
           : [];
         ezcatExportRecentBatches = Array.isArray(recentBatches)
           ? recentBatches.slice()
