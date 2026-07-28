@@ -828,6 +828,10 @@
         border-bottom: 1px solid #0f172a;
       }
 
+      .shipping-tracking-number {
+        letter-spacing: 0.04em;
+      }
+
       .single-date-filter {
         display: inline-flex;
         flex: 0 0 auto;
@@ -10129,18 +10133,32 @@
 
       function buildShippingTrackingNumberSlotsHtml(order) {
         const boxCount = getShippingManifestOrderBoxCount(order);
-        const slotCount = Math.max(1, Math.ceil(boxCount / 3));
+        const trackingNumbers = getShippingTrackingNumbersFromStoredValue(
+          order?.trackingNo,
+        );
+        const slotCount = Math.max(
+          1,
+          Math.ceil(boxCount / 3),
+          trackingNumbers.length,
+        );
         return `
           <div class="shipping-tracking-list">
             ${Array.from({ length: slotCount }, (_, index) => {
+              const trackingNumber = trackingNumbers[index] || "";
               return `
                 <div class="shipping-tracking-line">
                   <span>${escapeHtml(index + 1)}：</span>
-                  <span class="shipping-tracking-segment"></span>
-                  <span>-</span>
-                  <span class="shipping-tracking-segment"></span>
-                  <span>-</span>
-                  <span class="shipping-tracking-segment"></span>
+                  ${
+                    trackingNumber
+                      ? `<span class="shipping-tracking-number">${escapeHtml(trackingNumber)}</span>`
+                      : `
+                        <span class="shipping-tracking-segment"></span>
+                        <span>-</span>
+                        <span class="shipping-tracking-segment"></span>
+                        <span>-</span>
+                        <span class="shipping-tracking-segment"></span>
+                      `
+                  }
                 </div>
               `;
             }).join("")}
