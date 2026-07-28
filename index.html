@@ -558,6 +558,25 @@
         gap: 8px;
       }
 
+      .ezcat-export-previous-orders {
+        margin-top: 4px;
+        border-top: 1px solid #e2e8f0;
+        padding-top: 10px;
+      }
+
+      .ezcat-export-previous-orders summary {
+        cursor: pointer;
+        color: #64748b;
+        font-size: 13px;
+        font-weight: 900;
+      }
+
+      .ezcat-export-previous-list {
+        display: grid;
+        gap: 8px;
+        margin-top: 8px;
+      }
+
       .ezcat-export-row {
         display: grid;
         grid-template-columns: auto minmax(0, 1fr);
@@ -11194,8 +11213,10 @@
           updateEzcatExportSummary();
           return;
         }
-        list.innerHTML = ezcatExportCandidates
-          .map((candidate) => {
+        const previousSectionWasOpen = !!list.querySelector(
+          ".ezcat-export-previous-orders[open]",
+        );
+        const buildCandidateRowHtml = (candidate) => {
             const errors = Array.isArray(candidate.errors)
               ? candidate.errors
               : [];
@@ -11283,8 +11304,49 @@
                 </div>
               </div>
             `;
-          })
-          .join("");
+        };
+        const regularCandidates = ezcatExportCandidates.filter(
+          (candidate) => !candidate.requiresReexportApproval,
+        );
+        const previousCandidates = ezcatExportCandidates.filter(
+          (candidate) => candidate.requiresReexportApproval,
+        );
+        const hasSelectedReexport = previousCandidates.some(
+          (candidate) =>
+            ezcatExportSelections.get(String(candidate.orderNo || ""))?.mode ===
+            "reexport",
+        );
+        list.innerHTML = `
+          ${regularCandidates.map(buildCandidateRowHtml).join("")}
+          ${
+            previousCandidates.length
+              ? `
+                <details
+                  class="ezcat-export-previous-orders"
+                  ${previousSectionWasOpen || hasSelectedReexport ? "open" : ""}
+                >
+                  <summary>
+                    已匯出／已有宅配單號（${escapeHtml(previousCandidates.length)}筆${
+                      hasSelectedReexport
+                        ? `，本次重印 ${escapeHtml(
+                            previousCandidates.filter(
+                              (candidate) =>
+                                ezcatExportSelections.get(
+                                  String(candidate.orderNo || ""),
+                                )?.mode === "reexport",
+                            ).length,
+                          )} 筆`
+                        : ""
+                    }）
+                  </summary>
+                  <div class="ezcat-export-previous-list">
+                    ${previousCandidates.map(buildCandidateRowHtml).join("")}
+                  </div>
+                </details>
+              `
+              : ""
+          }
+        `;
         renderEzcatRecentBatches();
         updateEzcatExportSummary();
       }
