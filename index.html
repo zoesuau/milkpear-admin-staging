@@ -957,6 +957,23 @@
         opacity: 0.45;
       }
 
+      .shipping-ezcat-export-button,
+      .shipping-tracking-file-label,
+      .shipping-tracking-import-submit,
+      .shipping-manifest-print {
+        width: 230px;
+        max-width: 100%;
+        min-height: 42px;
+        box-sizing: border-box;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        padding: 9px 12px;
+        font-size: 14px;
+        line-height: 1.25;
+        text-align: center;
+      }
+
       .shipping-manifest-summary {
         display: grid;
         grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -4073,7 +4090,7 @@
           <button
             type="button"
             class="btn-refresh-orders"
-            onclick="refreshAdminOrdersManually()"
+            onclick="reloadAdminPage()"
           >
             重新整理
           </button>
@@ -4152,7 +4169,7 @@
             onclick="openEzcatExportModal()"
             disabled
           >
-            準備匯出黑貓 CSV
+            ①匯出給黑貓
           </button>
           <div
             class="shipping-ezcat-export-feedback"
@@ -4173,7 +4190,7 @@
           </div>
           <div class="shipping-tracking-import-actions">
             <label class="shipping-tracking-file-label">
-              選擇貨態 CSV
+              ②選擇黑貓貨態檔案
               <input
                 type="file"
                 id="shippingTrackingFileInput"
@@ -4188,7 +4205,7 @@
               onclick="commitShippingTrackingImport()"
               disabled
             >
-              確認寫入託運單號
+              ③確認匯入
             </button>
           </div>
           <div
@@ -4235,7 +4252,7 @@
             onclick="printShippingManifest()"
             disabled
           >
-            列印出貨單
+            ④列印三合院出貨總表
           </button>
         </div>
         <div
@@ -6407,6 +6424,19 @@
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
         updateAdminRefreshMeta();
+      }
+
+      function reloadAdminPage() {
+        if (hasBlockingAdminRefreshWork()) {
+          alert("目前有訂單正在編輯或處理中，請先儲存或取消後再重新整理。");
+          return;
+        }
+
+        document.querySelectorAll(".btn-refresh-orders").forEach((button) => {
+          button.disabled = true;
+          button.innerText = "整理中...";
+        });
+        window.location.reload();
       }
 
       async function refreshAdminOrdersFromOverlay() {
