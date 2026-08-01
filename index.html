@@ -5406,16 +5406,23 @@
       }
 
       function renderProductManagementCard(product) {
-        const activeText = product.active ? "上架" : "停售";
-        const activeClass = product.active
-          ? "product-status-active"
-          : "product-status-inactive";
+        const activeText = normalizeAdminProductStatus(product.status);
+        const activeClass =
+          activeText === "上架"
+            ? "product-status-active"
+            : "product-status-inactive";
         const stockText =
           Number.isInteger(product.stock) && product.stock >= 0
             ? `${product.stock}盒`
             : "未控管";
+        const reservedStock = Number.isInteger(product.adminReservedStock)
+          ? product.adminReservedStock
+          : 0;
+        const publicStock = Number.isInteger(product.stock)
+          ? Math.max(0, product.stock - reservedStock)
+          : null;
         return `
-            <article class="product-admin-card${product.active ? "" : " is-inactive"}" data-product-id="${escapeHtml(product.id)}">
+            <article class="product-admin-card${activeText === "上架" ? "" : " is-inactive"}" data-product-id="${escapeHtml(product.id)}">
               <div class="product-admin-summary">
                 <div class="product-admin-topline">
                   <div class="product-admin-chips">
@@ -5425,6 +5432,7 @@
                         ? `<span class="product-chip" style="color:#ef4444;border-color:#fecaca;">庫存 ${escapeHtml(product.stock)}</span>`
                         : ""
                     }
+                    ${reservedStock > 0 ? `<span class="product-chip">後台保留 ${escapeHtml(reservedStock)}｜前台可售 ${escapeHtml(publicStock)}</span>` : ""}
                   </div>
                   <div class="product-admin-card-actions">
                     <button type="button" class="product-edit-mini-btn" onclick="toggleProductManagementEdit(this)">✏️編輯</button>
@@ -5477,13 +5485,17 @@
             <input data-product-field="price" type="number" min="1" step="1" value="${escapeHtml(product.price || "")}">
           </div>
           <div class="product-field">
-            <label>庫存</label>
+            <label>總庫存</label>
             <input data-product-field="stock" type="number" min="0" step="1" placeholder="空白＝不限量" value="${Number.isInteger(product.stock) ? escapeHtml(product.stock) : ""}">
+          </div>
+          <div class="product-field">
+            <label>保留給後台（盒）</label>
+            <input data-product-field="adminReservedStock" type="number" min="0" step="1" value="${escapeHtml(Number.isInteger(product.adminReservedStock) ? product.adminReservedStock : 0)}">
           </div>
           <div class="product-field">
             <label>狀態</label>
             <select data-product-field="status">
-              ${renderSimpleOptions(["上架", "停售"], product.active ? "上架" : "停售")}
+              ${renderSimpleOptions(["上架", "僅後台販售", "停售"], normalizeAdminProductStatus(product.status))}
             </select>
           </div>
           <details class="product-code-details" ${product.isNew ? "open" : ""}>
@@ -5520,6 +5532,21 @@
         return text || "一般禮盒";
       }
 
+      function normalizeAdminProductStatus(status) {
+        const text = String(status || "").trim();
+        if (["僅後台販售", "只開放後台", "僅後台"].includes(text)) {
+          return "僅後台販售";
+        }
+        if (text === "上架") return "上架";
+        return "停售";
+      }
+
+      function isAdminProductSellable(product) {
+        return ["上架", "僅後台販售"].includes(
+          normalizeAdminProductStatus(product?.status),
+        );
+      }
+
       function getAdminProductVarietyRank(product) {
         if (product?.variety === "牛奶梨") return 1;
         if (product?.variety === "蔗香梨") return 2;
@@ -5539,7 +5566,11 @@
       }
 
       function compareAdminProductsForAutoSort(a, b) {
-        if (a.active !== b.active) return a.active ? -1 : 1;
+        const statusRanks = { 上架: 1, 僅後台販售: 2, 停售: 3 };
+        const statusDiff =
+          statusRanks[normalizeAdminProductStatus(a.status)] -
+          statusRanks[normalizeAdminProductStatus(b.status)];
+        if (statusDiff !== 0) return statusDiff;
 
         const varietyDiff =
           getAdminProductVarietyRank(a) - getAdminProductVarietyRank(b);
@@ -5717,6 +5748,7 @@
           count: "8顆",
           price: 1,
           stock: null,
+          adminReservedStock: 0,
           active: false,
           status: "停售",
           sortOrder: adminProductCatalog.length + 1,
@@ -5770,6 +5802,15 @@
             : Number.isInteger(Number(stockText)) && Number(stockText) >= 0
               ? Number(stockText)
               : NaN;
+        const reservedStockText = getValue("adminReservedStock");
+        const adminReservedStock =
+          stock === null
+            ? 0
+            : Number.isInteger(Number(reservedStockText)) &&
+                Number(reservedStockText) >= 0
+              ? Number(reservedStockText)
+              : NaN;
+        const status = normalizeAdminProductStatus(getValue("status"));
 
         return {
           id: getValue("id"),
@@ -5780,8 +5821,9 @@
           count: getValue("count"),
           price: Number(getValue("price")),
           stock,
-          active: getValue("status") === "上架",
-          status: getValue("status") === "上架" ? "上架" : "停售",
+          adminReservedStock,
+          active: status === "上架",
+          status,
           sortOrder: 0,
         };
       }
@@ -5809,6 +5851,13 @@
             (!Number.isInteger(product.stock) || product.stock < 0)
           ) {
             return "庫存需為 0 以上整數，或留空代表不限量。";
+          }
+          if (
+            !Number.isInteger(product.adminReservedStock) ||
+            product.adminReservedStock < 0 ||
+            (product.stock === null && product.adminReservedStock !== 0)
+          ) {
+            return "保留給後台的庫存需為 0 以上整數；不限量商品請填 0。";
           }
           if (seenIds.has(product.id) || seenCodes.has(product.code)) {
             return "id 和 code 不可重複。";
@@ -5843,7 +5892,9 @@
 
       async function deactivateProductManagementCard(productId) {
         const products = adminProductCatalog.map((product) =>
-          product.id === productId ? { ...product, active: false } : product,
+          product.id === productId
+            ? { ...product, active: false, status: "停售" }
+            : product,
         );
         await saveProductManagementPayload({ products });
       }
@@ -5915,7 +5966,7 @@
 
       function getActiveAdminProducts() {
         return adminProductCatalog
-          .filter((product) => product.active === true)
+          .filter((product) => isAdminProductSellable(product))
           .sort((a, b) => a.sortOrder - b.sortOrder);
       }
 
@@ -5925,6 +5976,13 @@
 
       function buildAdminProductOptionsHtml(selectedCode = "") {
         const products = getActiveAdminProducts();
+        const selectedExistingProduct = getProductByCode(selectedCode);
+        if (
+          selectedExistingProduct &&
+          !products.some((product) => product.code === selectedExistingProduct.code)
+        ) {
+          products.unshift(selectedExistingProduct);
+        }
         const selectedProduct = products.some(
           (product) => product.code === selectedCode,
         )
@@ -5934,7 +5992,7 @@
         return products
           .map(
             (product) =>
-              `<option value="${escapeHtml(product.code)}" ${product.code === selectedProduct ? "selected" : ""}>${escapeHtml(getAdminProductDisplayName(product))}｜${escapeHtml(product.category || "")}｜${escapeHtml(product.count)}｜$${escapeHtml(formatAdminMoney(product.price))}</option>`,
+              `<option value="${escapeHtml(product.code)}" ${product.code === selectedProduct ? "selected" : ""}>${escapeHtml(getAdminProductDisplayName(product))}｜${escapeHtml(product.category || "")}｜${escapeHtml(product.count)}｜$${escapeHtml(formatAdminMoney(product.price))}${isAdminProductSellable(product) ? "" : "｜已停售（僅可保留或減量）"}</option>`,
           )
           .join("");
       }
@@ -7701,7 +7759,6 @@
 
           if (
             matches.length !== 1 ||
-            matches[0].active !== true ||
             !Number.isInteger(qty) ||
             qty <= 0 ||
             seenCodes.has(matches[0].code)
