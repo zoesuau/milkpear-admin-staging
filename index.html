@@ -8500,16 +8500,12 @@
             ".admin-mark-shipped-submit",
           );
           if (submitButton) {
-            const notificationMode =
-              shippedPanel.querySelector(".admin-mark-shipped-mode")?.value ||
-              "send";
             submitButton.disabled =
               noteLocked ||
               shippedSaving ||
               workflowSaving ||
               (!!workflowEditor && adminWorkflowIsDirty(workflowEditor)) ||
-              (notificationMode === "skip" &&
-                shippedPanel.dataset.bankUnpaid === "true");
+              shippedPanel.dataset.bankUnpaid === "true";
           }
         }
       }
@@ -9041,15 +9037,10 @@
                   : ""
               }
               ${
-                isBankUnpaid &&
-                (isDirectPendingShipment || canSkipShipmentNotice)
+                isBankUnpaid
                   ? `
                     <div class="admin-mark-shipped-payment-warning">
-                      ${
-                        isDirectPendingShipment
-                          ? "⚠ 銀行轉帳未確認，請先確認收款。"
-                          : "⚠ 銀行轉帳未確認付款；「標記已寄出但不通知」不可使用。"
-                      }
+                      ⚠ 銀行轉帳尚未確認付款，請先改為已付款，才能標記已寄出或發送寄出通知。
                     </div>
                   `
                   : ""
@@ -9176,10 +9167,7 @@
         const shippedSaving = panel.dataset.saving === "true";
         const noteLocked = adminNoteIsOpen(card);
         adminMarkOrderShippedRefreshMode(panel);
-        const notificationMode =
-          panel.querySelector(".admin-mark-shipped-mode")?.value || "send";
-        const skipBlockedByPayment =
-          notificationMode === "skip" && panel.dataset.bankUnpaid === "true";
+        const shipmentBlockedByPayment = panel.dataset.bankUnpaid === "true";
         const submitButton = panel.querySelector(".admin-mark-shipped-submit");
         if (submitButton) {
           submitButton.disabled =
@@ -9187,7 +9175,7 @@
             isDirty ||
             workflowSaving ||
             shippedSaving ||
-            skipBlockedByPayment;
+            shipmentBlockedByPayment;
         }
       }
 
@@ -9329,7 +9317,7 @@
           );
           return;
         }
-        if (notificationMode === "skip" && isBankUnpaid) {
+        if (isBankUnpaid) {
           adminMarkOrderShippedSetFeedback(
             panel,
             "銀行轉帳尚未確認付款，請先改為已付款。",
@@ -9350,10 +9338,6 @@
             ? "將發送已寄出通知，並標記為已寄出。\n\n"
             : "將標記為已寄出，稍後請電話通知客人。\n\n"
           : "";
-        const paymentWarningMessage =
-          isDirectPendingShipment && isBankUnpaid
-            ? "⚠ 銀行轉帳未確認，請先確認收款。\n\n"
-            : "";
         const bundleMessage = panel.querySelector(
           ".admin-mark-shipped-bundle-change",
         )
@@ -9369,7 +9353,6 @@
           `訂單編號：${orderNo}\n` +
             `實際寄出日期：${actualShippingDate}\n\n` +
             directShipmentMessage +
-            paymentWarningMessage +
             bundleMessage +
             skipMessage +
             "將把訂單狀態改為「已寄出」。\n" +
@@ -10422,10 +10405,7 @@
             );
             if (panel && card && card.contains(panel)) {
               adminMarkOrderShippedRefreshState(card);
-              const isSkip =
-                panel.querySelector(".admin-mark-shipped-mode")?.value ===
-                "skip";
-              if (isSkip && panel.dataset.bankUnpaid === "true") {
+              if (panel.dataset.bankUnpaid === "true") {
                 adminMarkOrderShippedSetFeedback(
                   panel,
                   "銀行轉帳尚未確認付款，請先改為已付款。",
@@ -11046,12 +11026,29 @@
         return Math.max(1, Math.ceil(visualLines / 3));
       }
 
+      function getShippingManifestBlankRowCount(
+        printableRowUnits,
+        pageRowUnits = 13,
+      ) {
+        const normalizedPageUnits = Math.max(1, Number(pageRowUnits) || 13);
+        const normalizedPrintableUnits = Math.max(
+          0,
+          Number(printableRowUnits) || 0,
+        );
+        if (normalizedPrintableUnits === 0) return normalizedPageUnits;
+        const finalPageUnits = normalizedPrintableUnits % normalizedPageUnits;
+        return finalPageUnits === 0
+          ? 0
+          : normalizedPageUnits - finalPageUnits;
+      }
+
       function buildShippingManifestBlankRowsHtml(orders) {
         const printableRowUnits = orders.reduce(
           (sum, order) => sum + getShippingManifestPrintRowUnits(order),
           0,
         );
-        const blankRowCount = Math.max(0, 13 - printableRowUnits);
+        const blankRowCount =
+          getShippingManifestBlankRowCount(printableRowUnits);
         return Array.from({ length: blankRowCount }, (_, index) => {
           return `
             <tr class="shipping-manifest-blank-row" aria-hidden="true">
@@ -14150,6 +14147,9 @@ ${adminNote}
         const expectedShippingDate = String(
           order?.expectedShippingDate || "",
         ).trim();
+        if (String(order?.paymentState || "").trim() === "bank_unpaid") {
+          return "銀行轉帳尚未確認付款，請先改為已付款。";
+        }
         if (order?.orderStatus !== "已安排出貨") {
           return "只有已安排出貨的訂單可以批量標記已寄出。";
         }
@@ -14173,6 +14173,7 @@ ${adminNote}
           order?.expectedShippingDate || "",
         ).trim();
         return (
+          String(order?.paymentState || "").trim() !== "bank_unpaid" &&
           order?.orderStatus === "已安排出貨" &&
           expectedShippingDate !== "" &&
           adminWorkflowIsValidDate(expectedShippingDate) &&
@@ -14367,7 +14368,9 @@ ${adminNote}
             !sameOrderNos
           ) {
             throw new Error(
-              payload?.errorCode || "BATCH_SHIPPED_WRITE_VERIFY_FAILED",
+              payload?.reason ||
+                payload?.errorCode ||
+                "BATCH_SHIPPED_WRITE_VERIFY_FAILED",
             );
           }
 
@@ -14383,9 +14386,11 @@ ${adminNote}
           setBatchFeedback(
             error.message === "BATCH_REFRESH_FAILED"
               ? "批次可能已完成，但列表重新讀取失敗。請重新整理確認，請勿重複送出。"
-              : error.message === "BATCH_SHIPPED_WRITE_VERIFY_FAILED"
-                ? "批次結果無法完整驗證，請重新整理確認，請勿重複送出。"
-                : "批量已寄出並通知失敗，未套用前端變更。",
+              : error.message === "ORDER_SHIPPED_BANK_UNPAID"
+                ? "選取的訂單中有銀行轉帳尚未付款，請先改為已付款。整批訂單均未變更。"
+                : error.message === "BATCH_SHIPPED_WRITE_VERIFY_FAILED"
+                  ? "批次結果無法完整驗證，請重新整理確認，請勿重複送出。"
+                  : "批量已寄出並通知失敗，未套用前端變更。",
             true,
           );
         } finally {
