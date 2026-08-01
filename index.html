@@ -4848,6 +4848,11 @@
                 required
                 placeholder="請輸入訂購人電話"
               />
+              <div
+                id="new-sender-history-status"
+                class="customer-search-status"
+                aria-live="polite"
+              ></div>
             </div>
 
             <div class="admin-content-section-title">三、訂單與出貨需求</div>
@@ -5015,6 +5020,7 @@
       let adminSelectedCustomer = null;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
+      let adminSenderHistoryRequestId = 0;
       const selectedOrderNos = new Set();
       const unconfirmedNotificationOrderNos = new Set();
       let adminBatchProcessing = false;
@@ -12641,6 +12647,15 @@
           .getElementById("new-sender-same-as-recipient")
           ?.addEventListener("change", handleNewOrderSameAsRecipientChange);
         document
+          .getElementById("new-sender-name")
+          ?.addEventListener("input", handleNewOrderSenderNameInput);
+        document
+          .getElementById("new-sender-name")
+          ?.addEventListener("blur", autofillHistoricalBuyerPhone);
+        document
+          .getElementById("new-sender-phone")
+          ?.addEventListener("input", handleNewOrderSenderPhoneInput);
+        document
           .getElementById("new-name")
           ?.addEventListener("input", syncNewOrderSenderFromRecipient);
         document
@@ -14509,6 +14524,7 @@ ${adminNote}
       function resetAdminCustomerLookup() {
         adminSelectedCustomer = null;
         adminCustomerSearchRequestId += 1;
+        adminSenderHistoryRequestId += 1;
         if (adminCustomerSearchTimer) {
           clearTimeout(adminCustomerSearchTimer);
           adminCustomerSearchTimer = null;
@@ -14530,6 +14546,9 @@ ${adminNote}
           selectedPanel.innerHTML = "";
         }
         if (syncCheckbox) syncCheckbox.checked = false;
+        const senderPhone = document.getElementById("new-sender-phone");
+        if (senderPhone) delete senderPhone.dataset.historyAutofilled;
+        setNewOrderSenderHistoryStatus("");
         const sameRecipientCheckbox = document.getElementById(
           "new-sender-same-as-recipient",
         );
@@ -14680,6 +14699,137 @@ ${adminNote}
         handleAdminCustomerSearchConfirm();
       }
 
+      function normalizeAdminCustomerLookupName(value) {
+        return String(value || "")
+          .replace(/\s+/g, "")
+          .toLowerCase();
+      }
+
+      function resolveHistoricalBuyerPhone(customers, buyerName) {
+        const normalizedName = normalizeAdminCustomerLookupName(buyerName);
+        if (!normalizedName || !Array.isArray(customers)) {
+          return { phone: "", ambiguous: false };
+        }
+
+        const uniquePhones = [
+          ...new Set(
+            customers
+              .filter(
+                (customer) =>
+                  normalizeAdminCustomerLookupName(customer?.buyerName) ===
+                  normalizedName,
+              )
+              .map((customer) => String(customer?.buyerPhone || "").trim())
+              .filter(Boolean),
+          ),
+        ];
+
+        return {
+          phone: uniquePhones.length === 1 ? uniquePhones[0] : "",
+          ambiguous: uniquePhones.length > 1,
+        };
+      }
+
+      function setNewOrderSenderHistoryStatus(message, isError = false) {
+        const status = document.getElementById("new-sender-history-status");
+        if (!status) return;
+        status.innerText = String(message || "");
+        status.style.color = isError ? "#dc2626" : "#64748b";
+      }
+
+      function handleNewOrderSenderNameInput() {
+        adminSenderHistoryRequestId += 1;
+        const senderPhone = document.getElementById("new-sender-phone");
+        if (senderPhone?.dataset.historyAutofilled === "true") {
+          senderPhone.value = "";
+          delete senderPhone.dataset.historyAutofilled;
+        }
+        setNewOrderSenderHistoryStatus("");
+      }
+
+      function handleNewOrderSenderPhoneInput() {
+        const senderPhone = document.getElementById("new-sender-phone");
+        if (senderPhone) delete senderPhone.dataset.historyAutofilled;
+        setNewOrderSenderHistoryStatus("");
+      }
+
+      async function autofillHistoricalBuyerPhone() {
+        const sameCheckbox = document.getElementById(
+          "new-sender-same-as-recipient",
+        );
+        const senderName = document.getElementById("new-sender-name");
+        const senderPhone = document.getElementById("new-sender-phone");
+        const buyerName = String(senderName?.value || "").trim();
+        if (
+          sameCheckbox?.checked ||
+          buyerName.length < 2 ||
+          String(senderPhone?.value || "").trim()
+        ) {
+          return;
+        }
+
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) return;
+
+        const requestId = ++adminSenderHistoryRequestId;
+        setNewOrderSenderHistoryStatus("查詢歷史電話中...");
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminSearchCustomers",
+                adminSessionToken,
+                query: buyerName,
+              }),
+            },
+            ADMIN_READ_ORDERS_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            requestId !== adminSenderHistoryRequestId ||
+            normalizeAdminCustomerLookupName(senderName?.value) !==
+              normalizeAdminCustomerLookupName(buyerName)
+          ) {
+            return;
+          }
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            payload?.action !== "adminSearchCustomers" ||
+            !Array.isArray(payload.customers)
+          ) {
+            throw new Error(payload?.errorCode || "CUSTOMER_SEARCH_FAILED");
+          }
+
+          const resolved = resolveHistoricalBuyerPhone(
+            payload.customers,
+            buyerName,
+          );
+          if (resolved.phone && !String(senderPhone?.value || "").trim()) {
+            senderPhone.value = resolved.phone;
+            senderPhone.dataset.historyAutofilled = "true";
+            setNewOrderSenderHistoryStatus("已帶入歷史訂購人電話。");
+          } else if (resolved.ambiguous) {
+            setNewOrderSenderHistoryStatus(
+              "找到同名客戶，請使用上方客戶查詢確認電話。",
+            );
+          } else {
+            setNewOrderSenderHistoryStatus("");
+          }
+        } catch (error) {
+          if (requestId !== adminSenderHistoryRequestId) return;
+          setNewOrderSenderHistoryStatus(
+            "歷史電話查詢失敗，請手動輸入。",
+            true,
+          );
+        }
+      }
+
       function syncNewOrderSenderFromRecipient() {
         const sameCheckbox = document.getElementById(
           "new-sender-same-as-recipient",
@@ -14693,7 +14843,12 @@ ${adminNote}
         const senderName = document.getElementById("new-sender-name");
         const senderPhone = document.getElementById("new-sender-phone");
         if (senderName) senderName.value = recipientName;
-        if (senderPhone) senderPhone.value = recipientPhone;
+        if (senderPhone) {
+          senderPhone.value = recipientPhone;
+          delete senderPhone.dataset.historyAutofilled;
+        }
+        adminSenderHistoryRequestId += 1;
+        setNewOrderSenderHistoryStatus("");
       }
 
       function handleNewOrderSameAsRecipientChange(event) {
@@ -14717,6 +14872,10 @@ ${adminNote}
         };
         setValue("new-sender-name", buyerName);
         setValue("new-sender-phone", buyerPhone);
+        const senderPhone = document.getElementById("new-sender-phone");
+        if (senderPhone) delete senderPhone.dataset.historyAutofilled;
+        adminSenderHistoryRequestId += 1;
+        setNewOrderSenderHistoryStatus("");
         setValue("new-name", recipientName);
         setValue("new-phone", recipientPhone);
         setValue("new-address", customer.recipientAddress || "");
