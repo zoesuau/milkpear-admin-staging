@@ -4903,6 +4903,13 @@
                 placeholder="僅後台可見，不會通知客戶"
               ></textarea>
             </div>
+            <div class="form-group">
+              <label class="customer-sync-checkbox">
+                <input type="checkbox" id="new-oa-text-order-marker" />
+                LINE＠管理員群組通知顯示「◎」
+              </label>
+              <small>僅限 OA 客人用文字下單時勾選；預設不勾選。</small>
+            </div>
 
             <div class="admin-content-section-title">六、金額預覽</div>
             <div class="form-group">
@@ -11028,18 +11035,31 @@
 
       function getShippingManifestBlankRowCount(
         printableRowUnits,
-        pageRowUnits = 13,
+        firstPageRowUnits = 15,
+        continuationPageRowUnits = 22,
       ) {
-        const normalizedPageUnits = Math.max(1, Number(pageRowUnits) || 13);
+        const normalizedFirstPageUnits = Math.max(
+          1,
+          Number(firstPageRowUnits) || 15,
+        );
+        const normalizedContinuationPageUnits = Math.max(
+          1,
+          Number(continuationPageRowUnits) || 22,
+        );
         const normalizedPrintableUnits = Math.max(
           0,
           Number(printableRowUnits) || 0,
         );
-        if (normalizedPrintableUnits === 0) return normalizedPageUnits;
-        const finalPageUnits = normalizedPrintableUnits % normalizedPageUnits;
+        if (normalizedPrintableUnits <= normalizedFirstPageUnits) {
+          return normalizedFirstPageUnits - normalizedPrintableUnits;
+        }
+        const continuationUnits =
+          normalizedPrintableUnits - normalizedFirstPageUnits;
+        const finalPageUnits =
+          continuationUnits % normalizedContinuationPageUnits;
         return finalPageUnits === 0
           ? 0
-          : normalizedPageUnits - finalPageUnits;
+          : normalizedContinuationPageUnits - finalPageUnits;
       }
 
       function buildShippingManifestBlankRowsHtml(orders) {
@@ -14853,6 +14873,9 @@ ${adminNote}
           customerNote: document.getElementById("new-note")?.value.trim() || "",
           adminNote:
             document.getElementById("new-admin-note")?.value.trim() || "",
+          showOaTextOrderMarker:
+            document.getElementById("new-oa-text-order-marker")?.checked ===
+            true,
           paymentState:
             document.getElementById("new-payment-method")?.value || "",
           expectedShippingDate:
