@@ -10820,6 +10820,30 @@
           });
       }
 
+      function mapShippingManifestRemoteOrder(candidate, candidateIndex) {
+        const manifest = candidate?.fields || candidate || {};
+        return {
+          orderNo: candidate?.orderNo,
+          createdAt: manifest.createdAt,
+          orderSource: manifest.orderSource,
+          showOaTextOrderMarker:
+            manifest.showOaTextOrderMarker === true,
+          _manifestSourceIndex: candidateIndex,
+          recipientName: candidate?.recipientName,
+          recipientPhone: candidate?.recipientPhone,
+          recipientAddress: candidate?.recipientAddress,
+          buyerName: manifest.buyerName,
+          itemsSummary: manifest.itemsSummary,
+          totalBoxes: manifest.totalBoxes,
+          finalAmount: manifest.finalAmount,
+          expectedShippingDate: manifest.expectedShippingDate,
+          customerNote: manifest.customerNote,
+          orderStatus: manifest.orderStatus,
+          adminNote: manifest.adminNote,
+          trackingNo: manifest.trackingNo,
+        };
+      }
+
       async function loadCompleteShippingManifestOrders() {
         const { startDate, endDate } = getShippingManifestDateRange();
         if (
@@ -10868,27 +10892,7 @@
             ? payload.recentBatches.slice()
             : [];
           shippingManifestRemoteOrders = payload.candidates.map(
-            (candidate, candidateIndex) => {
-              const manifest = candidate.fields || candidate;
-              return {
-                orderNo: candidate.orderNo,
-                createdAt: manifest.createdAt,
-                orderSource: manifest.orderSource,
-                _manifestSourceIndex: candidateIndex,
-                recipientName: candidate.recipientName,
-                recipientPhone: candidate.recipientPhone,
-                recipientAddress: candidate.recipientAddress,
-                buyerName: manifest.buyerName,
-                itemsSummary: manifest.itemsSummary,
-                totalBoxes: manifest.totalBoxes,
-                finalAmount: manifest.finalAmount,
-                expectedShippingDate: manifest.expectedShippingDate,
-                customerNote: manifest.customerNote,
-                orderStatus: manifest.orderStatus,
-                adminNote: manifest.adminNote,
-                trackingNo: manifest.trackingNo,
-              };
-            },
+            mapShippingManifestRemoteOrder,
           );
           renderShippingManifest();
         } catch (error) {
