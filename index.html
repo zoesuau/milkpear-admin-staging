@@ -5016,6 +5016,8 @@
       };
       let adminProductsReady = false;
       let latestAdminOrders = [];
+      let adminBackgroundRefreshTimer = null;
+      let adminBackgroundRefreshRequestId = 0;
       let adminCreateOrderSubmitting = false;
       let adminSelectedCustomer = null;
       let adminCustomerSearchTimer = null;
@@ -6727,17 +6729,6 @@
             renderShippingManifest();
             return true;
           }
-
-          const renderedHtml = adminOrders
-            .map((order) => buildAdminOrderCardHtml(order))
-            .join("");
-
-          if (!renderedHtml.trim()) {
-            return false;
-          }
-
-          cardsContainer.innerHTML = renderedHtml;
-          syncAdminSearchMatches();
           applyCurrentFilter();
           return true;
         } catch (error) {
@@ -6769,24 +6760,10 @@
           } else {
             nextOrders[index] = order;
           }
-          latestAdminOrders = nextOrders;
-
-          const oldCard = [...cardsContainer.querySelectorAll(".card")].find(
-            (card) => String(card.dataset.orderNo || "") === orderNo,
-          );
-          if (!oldCard) {
-            return renderAdminOrders(latestAdminOrders);
-          }
-
-          const wrapper = document.createElement("div");
-          wrapper.innerHTML = buildAdminOrderCardHtml(order).trim();
-          const newCard = wrapper.firstElementChild;
-          if (!newCard) return false;
-          oldCard.replaceWith(newCard);
-
-          syncAdminSearchMatches();
-          updateStatsCounters();
+          latestAdminOrders = nextOrders.slice(0, 100);
+          moveAdminPageToOrder(orderNo);
           applyCurrentFilter();
+          updateStatsCounters();
           handleBatchCheckChange();
           updateNotifyButton();
           applyReadOnlyModeToRealOrders();
@@ -6798,9 +6775,23 @@
       }
 
       function refreshAdminOrdersInBackground() {
-        window.setTimeout(async () => {
+        if (adminBackgroundRefreshTimer) {
+          window.clearTimeout(adminBackgroundRefreshTimer);
+        }
+        const requestId = ++adminBackgroundRefreshRequestId;
+        adminBackgroundRefreshTimer = window.setTimeout(async () => {
+          adminBackgroundRefreshTimer = null;
           const adminOrders = await fetchAdminOrdersFromGas({ silent: true });
-          if (Array.isArray(adminOrders) && renderAdminOrders(adminOrders)) {
+          if (requestId !== adminBackgroundRefreshRequestId) return;
+          if (!Array.isArray(adminOrders)) {
+            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
+            return;
+          }
+          if (hasBlockingAdminRefreshWork()) {
+            setAdminRefreshState(false, "背景同步完成；目前編輯中的畫面保持不變。");
+            return;
+          }
+          if (renderAdminOrders(adminOrders)) {
             updateStatsCounters();
             applyCurrentFilter();
             handleBatchCheckChange();
@@ -6808,9 +6799,9 @@
             applyReadOnlyModeToRealOrders();
             updateAdminRefreshMeta();
           } else {
-            setAdminRefreshState(false, "背景同步失敗，請稍後手動重新整理。");
+            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
           }
-        }, 0);
+        }, 500);
       }
 
       function applySingleOrderResponse(
@@ -7013,6 +7004,69 @@
           .join("");
       }
 
+      function buildAdminOrderSearchText(order) {
+        return [
+          order?.orderNo,
+          order?.recipientName,
+          order?.recipientPhone,
+          order?.recipientAddress,
+          order?.buyerName,
+          order?.buyerPhone,
+          order?.itemsSummary,
+          order?.finalAmount,
+          order?.paymentMethod,
+          order?.paymentStatus,
+          order?.customerNote,
+          order?.adminNote,
+          order?.lineDisplayName,
+          order?.trackingNo,
+          order?.orderStatus,
+          order?.expectedShippingDate,
+          order?.actualShippingDate,
+          order?.requestedShippingStartDate,
+          order?.requestedShippingEndDate,
+          order?.changedFields,
+          order?.notificationStatus,
+        ]
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+      }
+
+      function buildAdminOrderFilterCard(order) {
+        const status = String(order?.orderStatus || "待確認").trim();
+        const dataset = {
+          status,
+          orderNo: String(order?.orderNo || "").trim(),
+          canLineNotify: order?.canLineNotify === true ? "true" : "false",
+          notificationStatus: String(order?.notificationStatus || "").trim(),
+          lastNotificationType: String(order?.lastNotificationType || "").trim(),
+          pendingNoticeFields: String(order?.changedFields || "").trim(),
+          expectedShippingDate: String(order?.expectedShippingDate || "").trim(),
+          actualShippingDate: String(order?.actualShippingDate || "").trim(),
+          requestedShippingStartDate: String(
+            order?.requestedShippingStartDate || "",
+          ).trim(),
+          requestedShippingEndDate: String(
+            order?.requestedShippingEndDate || "",
+          ).trim(),
+          requestedShippingSortOrder: String(
+            order?.requestedShippingSortOrder || "",
+          ).trim(),
+          createdAt: String(order?.createdAt || "").trim(),
+          lastUpdatedAt: String(order?.lastUpdatedAt || "").trim(),
+          searchText: buildAdminOrderSearchText(order),
+        };
+        return {
+          dataset,
+          order,
+          getAttribute(name) {
+            return name === "data-status" ? status : "";
+          },
+        };
+      }
+
       function buildAdminOrderCardHtml(order) {
         const statusMeta = getAdminOrderStatusMeta(order?.orderStatus);
         const orderStatus = String(order?.orderStatus ?? "").trim();
@@ -7212,40 +7266,7 @@
           actualShippingDate,
           requestedShippingBatchLabel,
         });
-        const searchText = [
-          order?.orderNo,
-          order?.recipientName,
-          order?.recipientPhone,
-          order?.recipientAddress,
-
-          order?.buyerName,
-          order?.buyerPhone,
-
-          order?.itemsSummary,
-          order?.finalAmount,
-
-          order?.paymentMethod,
-          order?.paymentStatus,
-
-          order?.customerNote,
-          order?.adminNote,
-
-          order?.lineDisplayName,
-          order?.trackingNo,
-
-          order?.orderStatus,
-          order?.expectedShippingDate,
-          order?.actualShippingDate,
-          order?.requestedShippingStartDate,
-          order?.requestedShippingEndDate,
-
-          order?.changedFields,
-          order?.notificationStatus,
-        ]
-          .map((value) => String(value ?? "").trim())
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
+        const searchText = buildAdminOrderSearchText(order);
         const customerNote = String(order?.customerNote ?? "").trim();
         const adminNote = String(order?.adminNote ?? "");
         const hasAdminNote = adminNote.trim().length > 0;
@@ -7752,25 +7773,23 @@
 
           const resultMessage =
             adminCancelOrderGetResultMessage(notificationStatus);
-          if (feedback) {
-            feedback.innerText = `${resultMessage}正在重新讀取訂單…`;
-          }
-          const adminOrders = await fetchAdminOrdersFromGas();
-          if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
+          const cancelledOrder = payload.order || {
+            ...getLatestAdminOrder(orderNo),
+            orderNo,
+            orderStatus: "已取消",
+            changedFields: "",
+            notificationStatus,
+            lastNotificationType: "cancellation_notice",
+          };
+          if (!applySingleOrderResponse(cancelledOrder)) {
             adminCancelOrderSetSaving(false);
             if (feedback) {
               feedback.classList.add("is-error");
               feedback.innerText =
-                "訂單已取消，但重新讀取失敗，請重新整理確認最新資料。";
+                "訂單已取消，但畫面更新失敗，請重新整理確認最新資料。";
             }
             return;
           }
-
-          updateStatsCounters();
-          applyCurrentFilter();
-          handleBatchCheckChange();
-          updateNotifyButton();
-          applyReadOnlyModeToRealOrders();
           adminCancelOrderSetSaving(false);
           closeAdminCancelOrderModal();
           if (notificationWarning || notificationStatus !== "sent") {
@@ -12864,7 +12883,7 @@
       }
 
       function updateStatsCounters() {
-        const cards = document.querySelectorAll(".cards-container .card");
+        const cards = latestAdminOrders.map(buildAdminOrderFilterCard);
         let pending = 0,
           confirmed = 0,
           shipped = 0,
@@ -13325,10 +13344,16 @@
       }
 
       function getFilteredAdminCards() {
-        const filteredCards = [
-          ...document.querySelectorAll(".cards-container .card"),
-        ].filter((card) => {
-          const searchMatch = card.dataset.searchMatch !== "false";
+        const keyword = String(
+          document.getElementById("searchBar")?.value ?? "",
+        )
+          .trim()
+          .toLowerCase();
+        const filteredCards = latestAdminOrders
+          .map(buildAdminOrderFilterCard)
+          .filter((card) => {
+          const searchMatch =
+            !keyword || String(card.dataset.searchText || "").includes(keyword);
           return (
             isCardStatusMatched(card) &&
             isCardDateMatched(card) &&
@@ -13337,6 +13362,17 @@
           );
         });
         return sortAdminCardsForCurrentStatus(filteredCards);
+      }
+
+      function moveAdminPageToOrder(orderNo) {
+        const normalizedOrderNo = String(orderNo || "").trim();
+        if (!normalizedOrderNo) return false;
+        const index = getFilteredAdminCards().findIndex(
+          (card) => card.dataset.orderNo === normalizedOrderNo,
+        );
+        if (index < 0) return false;
+        adminCurrentPage = Math.floor(index / ADMIN_ORDERS_PER_PAGE) + 1;
+        return true;
       }
 
       function updateAdminPagination(totalCount) {
@@ -13365,29 +13401,39 @@
           adminBatchProcessing || adminCurrentPage >= totalPages;
       }
 
+      function getAdminPageSlice(items, page, pageSize) {
+        const source = Array.isArray(items) ? items : [];
+        const safePage = Math.max(Number(page) || 1, 1);
+        const safePageSize = Math.max(Number(pageSize) || 1, 1);
+        const start = (safePage - 1) * safePageSize;
+        return source.slice(start, start + safePageSize);
+      }
+
       function applyCurrentFilter() {
-        const cards = [...document.querySelectorAll(".cards-container .card")];
+        const cardsContainer = document.getElementById("cards-container");
+        if (!cardsContainer) return false;
         const matchedCards = getFilteredAdminCards();
         const totalPages = Math.max(
           1,
           Math.ceil(matchedCards.length / ADMIN_ORDERS_PER_PAGE),
         );
         adminCurrentPage = Math.min(Math.max(adminCurrentPage, 1), totalPages);
-        const pageStart = (adminCurrentPage - 1) * ADMIN_ORDERS_PER_PAGE;
-        const pageCards = new Set(
-          matchedCards.slice(pageStart, pageStart + ADMIN_ORDERS_PER_PAGE),
+        const pageCards = getAdminPageSlice(
+          matchedCards,
+          adminCurrentPage,
+          ADMIN_ORDERS_PER_PAGE,
         );
-        cards.forEach((card) => {
-          if (pageCards.has(card)) {
-            card.style.display = "";
-          } else {
-            card.style.display = "none";
-          }
-        });
+        cardsContainer.innerHTML = pageCards.length
+          ? pageCards
+              .map((card) => buildAdminOrderCardHtml(card.order))
+              .join("")
+          : `<div class="status-msg">目前沒有符合條件的訂單</div>`;
         updateAdminPagination(matchedCards.length);
         cleanupSelectedOrderNos(true);
         syncBatchSelectionUi();
+        applyReadOnlyModeToRealOrders();
         renderShippingManifest();
+        return true;
       }
 
       // ==========================================
@@ -15156,15 +15202,18 @@ ${adminNote}
           }
 
           const createdOrderNo = String(result.created.orderNo).trim();
-          const adminOrders = await fetchAdminOrdersFromGas();
-          if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
-            throw new Error("ORDER_CREATE_REFRESH_FAILED");
+          if (
+            !result.order ||
+            String(result.order.orderNo || "").trim() !== createdOrderNo
+          ) {
+            throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
           }
-          const createdCard = [
-            ...document.querySelectorAll(".card[data-order-no]"),
-          ].find((card) => card.dataset.orderNo === createdOrderNo);
-          if (!createdCard) {
-            throw new Error("ORDER_CREATE_REFRESH_FAILED");
+          if (
+            !applySingleOrderResponse(result.order, null, {
+              refreshInBackground: false,
+            })
+          ) {
+            throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
           }
 
           adminCreateOrderSubmitting = false;
@@ -15177,9 +15226,9 @@ ${adminNote}
           scrollAdminOrderCardIntoView(createdOrderNo);
         } catch (error) {
           feedback.className = "admin-content-feedback is-error";
-          if (error.message === "ORDER_CREATE_REFRESH_FAILED") {
+          if (error.message === "ORDER_CREATE_LOCAL_UPDATE_FAILED") {
             feedback.innerText =
-              "訂單可能已建立，但列表未能重新載入。請重新整理後確認訂單編號，請勿重複建立。";
+              "訂單已建立，但畫面未能加入新卡片。請重新整理後確認訂單編號，請勿重複建立。";
             submitButton.innerText = "請先重新整理確認";
             return;
           }
