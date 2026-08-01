@@ -1859,6 +1859,27 @@
         min-height: 88px;
         resize: vertical;
       }
+      .admin-content-field .admin-content-marker-label {
+        align-items: center;
+        color: #475569;
+        display: flex;
+        font-size: 13px;
+        font-weight: 800;
+        gap: 8px;
+        margin: 0;
+      }
+      .admin-content-field .admin-content-marker-label input {
+        flex: 0 0 auto;
+        margin: 0;
+        width: auto;
+      }
+      .admin-content-marker-help {
+        color: #64748b;
+        display: block;
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 6px;
+      }
       .admin-content-product-row {
         display: flex;
         gap: 8px;
@@ -4906,9 +4927,9 @@
             <div class="form-group">
               <label class="customer-sync-checkbox">
                 <input type="checkbox" id="new-oa-text-order-marker" />
-                LINE＠管理員群組通知顯示「◎」
+                OA 文字下單（出貨總表顯示「◎」）
               </label>
-              <small>僅限 OA 客人用文字下單時勾選；預設不勾選。</small>
+              <small>僅限 OA 客人用文字下單；勾選後出貨總表與管理員群組新單通知顯示「◎」。預設不勾選。</small>
             </div>
 
             <div class="admin-content-section-title">六、金額預覽</div>
@@ -7960,6 +7981,17 @@
                 <div class="admin-content-field"><label>優惠金額</label><input type="number" min="0" step="1" class="admin-content-discount-amount" value="${escapeHtml(order.discountAmount || 0)}" oninput="updateAdminContentPreview(this.closest('.card'))"></div>
                 <div class="admin-content-field"><label>優惠原因</label><input class="admin-content-discount-reason" value="${escapeHtml(order.discountReason || "")}"></div>
                 <div class="admin-content-field full"><label>管理員備註</label><textarea class="admin-content-admin-note">${escapeHtml(order.adminNote || "")}</textarea></div>
+                ${
+                  String(order.orderSource || "").trim() === "管理端"
+                    ? `<div class="admin-content-field full">
+                        <label class="customer-sync-checkbox admin-content-marker-label">
+                          <input type="checkbox" class="admin-content-oa-marker" ${order.showOaTextOrderMarker === true ? "checked" : ""}>
+                          OA 文字下單（出貨總表顯示「◎」）
+                        </label>
+                        <small class="admin-content-marker-help">可替舊訂單補勾或取消；儲存後不會重送 LINE 新單通知。</small>
+                      </div>`
+                    : ""
+                }
               </div>
             </div>
             <div class="admin-content-section">
@@ -8236,6 +8268,11 @@
             editor.querySelector(".admin-content-admin-note")?.value.trim() ||
             "",
         };
+
+        if (String(order.orderSource || "").trim() === "管理端") {
+          payload.showOaTextOrderMarker =
+            editor.querySelector(".admin-content-oa-marker")?.checked === true;
+        }
 
         if (!shippedOnly) {
           payload.recipientName =
@@ -11147,6 +11184,12 @@
         return notes.join("／");
       }
 
+      function getShippingManifestSequenceLabel(order, index) {
+        if (order?.showOaTextOrderMarker === true) return "◎";
+        if (String(order?.orderSource || "").trim() === "LINE表單") return "＠";
+        return String(index + 1);
+      }
+
       function renderShippingManifest() {
         const panel = document.getElementById("shippingManifestPanel");
         const subtitle = document.getElementById("shippingManifestSubtitle");
@@ -11231,11 +11274,9 @@
           .map((order, index) => {
             const note = getShippingManifestNote(order);
             const senderName = String(order?.buyerName || "").trim();
-            const isLineOrder =
-              String(order?.orderSource || "").trim() === "LINE表單";
             return `
               <tr>
-                <td class="cell-center">${isLineOrder ? "＠" : escapeHtml(index + 1)}${
+                <td class="cell-center">${escapeHtml(getShippingManifestSequenceLabel(order, index))}${
                   isRangeMode
                     ? `<span class="shipping-manifest-row-date">${escapeHtml(formatShippingManifestRowDate(order?.expectedShippingDate || ""))}</span>`
                     : ""
