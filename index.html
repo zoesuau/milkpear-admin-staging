@@ -2841,7 +2841,9 @@
         font-size: 13px;
         font-weight: 800;
       }
-      .admin-mark-shipped-date {
+      .admin-mark-shipped-date,
+      .admin-mark-shipped-mode,
+      .admin-mark-shipped-skip-reason {
         width: 100%;
         max-width: 100%;
         min-width: 0;
@@ -2850,6 +2852,24 @@
         border: 1px solid #86efac;
         border-radius: 8px;
         background: white;
+      }
+      .admin-mark-shipped-skip-fields {
+        grid-column: 1 / -1;
+        display: grid;
+        gap: 6px;
+        padding: 10px 12px;
+        border: 1px solid #fdba74;
+        border-radius: 10px;
+        background: #fff7ed;
+      }
+      .admin-mark-shipped-skip-fields.hidden {
+        display: none;
+      }
+      .admin-mark-shipped-skip-fields small {
+        color: #9a3412;
+        font-size: 12px;
+        font-weight: 700;
+        line-height: 1.5;
       }
       .admin-mark-shipped-submit {
         white-space: nowrap;
@@ -2884,6 +2904,9 @@
         border: 1px solid #bbf7d0;
         border-radius: 10px;
         background: #ffffff;
+      }
+      .admin-mark-shipped-change-option.hidden {
+        display: none;
       }
       .admin-mark-shipped-change-option label {
         display: flex;
@@ -2941,6 +2964,8 @@
           gap: 8px;
         }
         .admin-mark-shipped-date,
+        .admin-mark-shipped-mode,
+        .admin-mark-shipped-skip-reason,
         .admin-mark-shipped-grid input[type="date"] {
           width: 100%;
           inline-size: 100%;
@@ -7345,6 +7370,7 @@
                       canLineNotify,
                       pendingNoticeLabels,
                       directPendingShipment: canDirectMarkOrderShipped,
+                      expectedShippingDate,
                       paymentState,
                     })
                   : ""
@@ -8465,7 +8491,7 @@
         if (shippedPanel) {
           shippedPanel
             .querySelectorAll(
-              ".admin-mark-shipped-date, .admin-mark-shipped-submit",
+              ".admin-mark-shipped-date, .admin-mark-shipped-mode, .admin-mark-shipped-skip-reason, .admin-mark-shipped-bundle-change, .admin-mark-shipped-submit",
             )
             .forEach((control) => {
               control.disabled = noteLocked || shippedSaving;
@@ -8474,11 +8500,16 @@
             ".admin-mark-shipped-submit",
           );
           if (submitButton) {
+            const notificationMode =
+              shippedPanel.querySelector(".admin-mark-shipped-mode")?.value ||
+              "send";
             submitButton.disabled =
               noteLocked ||
               shippedSaving ||
               workflowSaving ||
-              (!!workflowEditor && adminWorkflowIsDirty(workflowEditor));
+              (!!workflowEditor && adminWorkflowIsDirty(workflowEditor)) ||
+              (notificationMode === "skip" &&
+                shippedPanel.dataset.bankUnpaid === "true");
           }
         }
       }
@@ -8973,8 +9004,13 @@
         const taipeiToday = getTaipeiToday();
         const canBundleChangeNotice = options.canBundleChangeNotice === true;
         const isDirectPendingShipment = options.directPendingShipment === true;
+        const expectedShippingDate = String(
+          options.expectedShippingDate || "",
+        ).trim();
         const canLineNotify = options.canLineNotify === true;
         const isBankUnpaid = options.paymentState === "bank_unpaid";
+        const canSkipShipmentNotice =
+          !isDirectPendingShipment && expectedShippingDate < taipeiToday;
         const pendingNoticeLabels = Array.isArray(options.pendingNoticeLabels)
           ? options.pendingNoticeLabels.filter(Boolean)
           : [];
@@ -8991,6 +9027,8 @@
             class="admin-mark-shipped-panel"
             data-mark-shipped="true"
             data-direct-shipment="${isDirectPendingShipment ? "true" : "false"}"
+            data-bank-unpaid="${isBankUnpaid ? "true" : "false"}"
+            data-send-label="${escapeHtml(submitLabel)}"
           >
             <div class="admin-mark-shipped-grid">
               ${
@@ -9003,10 +9041,15 @@
                   : ""
               }
               ${
-                isDirectPendingShipment && isBankUnpaid
+                isBankUnpaid &&
+                (isDirectPendingShipment || canSkipShipmentNotice)
                   ? `
                     <div class="admin-mark-shipped-payment-warning">
-                      ⚠ 銀行轉帳未確認，請先確認收款。
+                      ${
+                        isDirectPendingShipment
+                          ? "⚠ 銀行轉帳未確認，請先確認收款。"
+                          : "⚠ 銀行轉帳未確認付款；「標記已寄出但不通知」不可使用。"
+                      }
                     </div>
                   `
                   : ""
@@ -9020,6 +9063,36 @@
                   max="${escapeHtml(taipeiToday)}"
                 />
               </div>
+              ${
+                canSkipShipmentNotice
+                  ? `
+                    <div class="admin-mark-shipped-field">
+                      <label>寄出處理</label>
+                      <select class="admin-mark-shipped-mode">
+                        <option value="send" selected>${escapeHtml(submitLabel)}</option>
+                        <option value="skip">標記已寄出但不通知</option>
+                      </select>
+                    </div>
+                    <div class="admin-mark-shipped-skip-fields hidden">
+                      <label>不通知原因</label>
+                      <select class="admin-mark-shipped-skip-reason">
+                        <option value="">請選擇原因</option>
+                        <option value="客戶已透過其他方式得知">客戶已透過其他方式得知</option>
+                        <option value="客戶要求不通知">客戶要求不通知</option>
+                        <option value="內部補登出貨紀錄">內部補登出貨紀錄</option>
+                        <option value="其他特殊情況">其他特殊情況</option>
+                      </select>
+                      <small>選擇後不會發送 LINE，也不會建立待發送的寄出通知；系統會記錄操作者、時間與原因。</small>
+                    </div>
+                  `
+                  : isDirectPendingShipment
+                    ? ""
+                    : `
+                    <div class="admin-mark-shipped-direct-note">
+                      確定出貨日期尚未超過，寄出時仍會依正常流程通知客人。
+                    </div>
+                  `
+              }
               <button type="button" class="admin-mark-shipped-submit">
                 ${submitLabel}
               </button>
@@ -9061,6 +9134,34 @@
         feedback.classList.toggle("is-error", isError);
       }
 
+      function adminMarkOrderShippedRefreshMode(panel) {
+        if (!panel) return;
+        const mode =
+          panel.querySelector(".admin-mark-shipped-mode")?.value || "send";
+        const isSkip = mode === "skip";
+        const skipFields = panel.querySelector(
+          ".admin-mark-shipped-skip-fields",
+        );
+        const bundleOption = panel.querySelector(
+          ".admin-mark-shipped-change-option",
+        );
+        const bundleCheckbox = panel.querySelector(
+          ".admin-mark-shipped-bundle-change",
+        );
+        const submitButton = panel.querySelector(
+          ".admin-mark-shipped-submit",
+        );
+
+        skipFields?.classList.toggle("hidden", !isSkip);
+        bundleOption?.classList.toggle("hidden", isSkip);
+        if (bundleCheckbox && isSkip) bundleCheckbox.checked = false;
+        if (submitButton) {
+          submitButton.innerText = isSkip
+            ? "標記已寄出但不通知"
+            : panel.dataset.sendLabel || "標記已寄出";
+        }
+      }
+
       function adminMarkOrderShippedRefreshState(card) {
         const panel = card?.querySelector(
           '[data-mark-shipped="true"].admin-mark-shipped-panel',
@@ -9074,10 +9175,19 @@
         const workflowSaving = editor?.dataset.saving === "true";
         const shippedSaving = panel.dataset.saving === "true";
         const noteLocked = adminNoteIsOpen(card);
+        adminMarkOrderShippedRefreshMode(panel);
+        const notificationMode =
+          panel.querySelector(".admin-mark-shipped-mode")?.value || "send";
+        const skipBlockedByPayment =
+          notificationMode === "skip" && panel.dataset.bankUnpaid === "true";
         const submitButton = panel.querySelector(".admin-mark-shipped-submit");
         if (submitButton) {
           submitButton.disabled =
-            noteLocked || isDirty || workflowSaving || shippedSaving;
+            noteLocked ||
+            isDirty ||
+            workflowSaving ||
+            shippedSaving ||
+            skipBlockedByPayment;
         }
       }
 
@@ -9097,7 +9207,7 @@
         }
         panel
           .querySelectorAll(
-            ".admin-mark-shipped-date, .admin-mark-shipped-bundle-change, .admin-mark-shipped-submit",
+            ".admin-mark-shipped-date, .admin-mark-shipped-mode, .admin-mark-shipped-skip-reason, .admin-mark-shipped-bundle-change, .admin-mark-shipped-submit",
           )
           .forEach((control) => {
             control.disabled = isSaving;
@@ -9127,6 +9237,13 @@
             "此訂單目前無法確認已寄出，請重新讀取後再試。",
           ACTUAL_SHIPPING_DATE_ALREADY_EXISTS:
             "此訂單已存在實際寄出日期，不可覆寫。",
+          ORDER_SHIPPED_SKIP_REASON_INVALID: "請選擇不通知的原因。",
+          ORDER_SHIPPED_SKIP_NOT_ELIGIBLE:
+            "只有已安排確定出貨日期、尚未寄出的訂單可以使用不通知。",
+          ORDER_SHIPPED_SKIP_NOT_OVERDUE:
+            "確定出貨日期尚未超過，請使用正常寄出通知流程。",
+          ORDER_SHIPPED_BANK_UNPAID:
+            "銀行轉帳尚未確認付款，請先改為已付款。",
           ORDER_SHIPPED_WRITE_VERIFY_FAILED:
             "確認已寄出失敗，資料未能安全寫入。",
           ORDER_SHIPPED_ROLLBACK_FAILED: "結果無法確認，請停止操作並重新整理。",
@@ -9166,6 +9283,10 @@
         const bundleChangeNotice =
           panel.querySelector(".admin-mark-shipped-bundle-change")?.checked ===
           true;
+        const notificationMode =
+          panel.querySelector(".admin-mark-shipped-mode")?.value || "send";
+        const skipReason =
+          panel.querySelector(".admin-mark-shipped-skip-reason")?.value || "";
         const taipeiToday = getTaipeiToday();
 
         if (!orderNo) {
@@ -9200,6 +9321,30 @@
         const canLineNotify = card.dataset.canLineNotify === "true";
         const isBankUnpaid =
           String(card.dataset.paymentState || "").trim() === "bank_unpaid";
+        if (notificationMode === "skip" && isDirectPendingShipment) {
+          adminMarkOrderShippedSetFeedback(
+            panel,
+            "只有已有確定出貨日期的訂單可以使用不通知。",
+            true,
+          );
+          return;
+        }
+        if (notificationMode === "skip" && isBankUnpaid) {
+          adminMarkOrderShippedSetFeedback(
+            panel,
+            "銀行轉帳尚未確認付款，請先改為已付款。",
+            true,
+          );
+          return;
+        }
+        if (notificationMode === "skip" && !skipReason) {
+          adminMarkOrderShippedSetFeedback(
+            panel,
+            "請選擇不通知的原因。",
+            true,
+          );
+          return;
+        }
         const directShipmentMessage = isDirectPendingShipment
           ? canLineNotify
             ? "將發送已寄出通知，並標記為已寄出。\n\n"
@@ -9216,12 +9361,17 @@
             ? "已選擇：LINE 已寄出通知會一併列出本次資料異動；發送成功後才會結案。\n"
             : "未選擇合併：只發送一般已寄出通知，原本的資料異動待辦會保留。\n"
           : "";
+        const skipMessage =
+          notificationMode === "skip"
+            ? `已選擇「標記已寄出但不通知」。\n不通知原因：${skipReason}\n不會發送 LINE，也不會建立待發送的寄出通知。\n系統會留下操作者、時間與原因紀錄。\n\n`
+            : "";
         const confirmed = window.confirm(
           `訂單編號：${orderNo}\n` +
             `實際寄出日期：${actualShippingDate}\n\n` +
             directShipmentMessage +
             paymentWarningMessage +
             bundleMessage +
+            skipMessage +
             "將把訂單狀態改為「已寄出」。\n" +
             "此包不提供前端直接回復功能，確定繼續嗎？",
         );
@@ -9257,11 +9407,18 @@
               adminSessionToken,
               orderNo,
               actualShippingDate,
-              bundleChangeNotice: String(bundleChangeNotice),
+              bundleChangeNotice: String(
+                notificationMode === "send" && bundleChangeNotice,
+              ),
+              notificationMode,
+              skipReason: notificationMode === "skip" ? skipReason : "",
               requestKey: createAdminRequestKey("adminMarkOrderShipped", [
                 orderNo,
                 actualShippingDate,
-                String(bundleChangeNotice),
+                notificationMode,
+                notificationMode === "skip"
+                  ? skipReason
+                  : String(bundleChangeNotice),
               ]),
             }),
           });
@@ -9272,7 +9429,8 @@
             payload.action !== "adminMarkOrderShipped" ||
             payload.orderNo !== orderNo ||
             payload.orderStatus !== "已寄出" ||
-            payload.actualShippingDate !== actualShippingDate
+            payload.actualShippingDate !== actualShippingDate ||
+            payload.notificationMode !== notificationMode
           ) {
             const errorCode = String(payload?.errorCode || "");
             if (errorCode === "ADMIN_SESSION_REQUIRED") {
@@ -9291,7 +9449,11 @@
           actionSucceeded = true;
           adminMarkOrderShippedSetFeedback(
             panel,
-            payload.deduped
+            notificationMode === "skip"
+              ? payload.notificationAuditWarning
+                ? "已標記已寄出，寄出通知已略過；稽核紀錄使用備援格式寫入。"
+                : "已標記已寄出，寄出通知已略過。"
+              : payload.deduped
               ? "寄出通知已送出且未重複發送，正在背景同步…"
               : "已寫入，正在背景同步…",
           );
@@ -10247,6 +10409,34 @@
         cardsContainer.dataset.adminWorkflowBound = "true";
 
         const handleValueChange = (event) => {
+          if (
+            event.target.matches(
+              ".admin-mark-shipped-mode, .admin-mark-shipped-skip-reason",
+            )
+          ) {
+            const panel = event.target.closest(
+              '[data-mark-shipped="true"].admin-mark-shipped-panel',
+            );
+            const card = event.target.closest(
+              '.card[data-readonly="true"][data-order-no]',
+            );
+            if (panel && card && card.contains(panel)) {
+              adminMarkOrderShippedRefreshState(card);
+              const isSkip =
+                panel.querySelector(".admin-mark-shipped-mode")?.value ===
+                "skip";
+              if (isSkip && panel.dataset.bankUnpaid === "true") {
+                adminMarkOrderShippedSetFeedback(
+                  panel,
+                  "銀行轉帳尚未確認付款，請先改為已付款。",
+                  true,
+                );
+              } else {
+                adminMarkOrderShippedSetFeedback(panel, "");
+              }
+            }
+            return;
+          }
           if (
             !event.target.matches(
               ".admin-workflow-date, .admin-workflow-delivery-time-slot, .admin-workflow-payment",
