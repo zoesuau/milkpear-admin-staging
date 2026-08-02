@@ -3115,6 +3115,14 @@
         @page {
           size: A4 portrait;
           margin: 10mm;
+
+          @bottom-center {
+            content: "第 " counter(page) " 頁／共 " counter(pages) " 頁";
+            color: #000000;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            font-size: 8pt;
+            font-weight: 700;
+          }
         }
 
         * {
