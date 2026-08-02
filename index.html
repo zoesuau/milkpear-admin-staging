@@ -3950,6 +3950,7 @@
             oninput="handleSearch()"
           />
         </div>
+        <div id="adminSearchStatus" class="admin-workflow-feedback"></div>
         <div id="batchActionFeedback" class="admin-workflow-feedback"></div>
       </div>
 
@@ -5016,6 +5017,9 @@
       };
       let adminProductsReady = false;
       let latestAdminOrders = [];
+      let adminRecentOrders = [];
+      let adminOrderSearchTimer = null;
+      let adminOrderSearchRequestId = 0;
       let adminBackgroundRefreshTimer = null;
       let adminBackgroundRefreshRequestId = 0;
       let adminCreateOrderSubmitting = false;
@@ -5031,6 +5035,7 @@
       let adminNotificationSkipCard = null;
       let adminNotificationSkipSubmitting = false;
       const ADMIN_ORDERS_PER_PAGE = 20;
+      const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
       let currentAdminName =
@@ -6471,6 +6476,11 @@
 
       async function fetchAdminOrdersFromGas(options = {}) {
         const silent = options && options.silent === true;
+        const query = String(
+          options && Object.prototype.hasOwnProperty.call(options, "query")
+            ? options.query
+            : document.getElementById("searchBar")?.value || "",
+        ).trim();
         const adminReadStatusEl = document.getElementById("adminReadStatus");
 
         try {
@@ -6499,6 +6509,7 @@
               body: JSON.stringify({
                 action: "adminReadOrders",
                 adminSessionToken,
+                ...(query ? { query } : {}),
               }),
             },
             ADMIN_READ_ORDERS_TIMEOUT_MS,
@@ -6533,6 +6544,14 @@
           }
 
           const orders = payload.orders;
+          Object.defineProperty(orders, "adminReadMeta", {
+            value: {
+              searchMode: payload.searchMode === true,
+              query: String(payload.query || ""),
+              truncated: payload.truncated === true,
+            },
+            enumerable: false,
+          });
           if (adminReadStatusEl && !silent) {
             adminReadStatusEl.className = "gas-test-status";
             adminReadStatusEl.innerText = "";
@@ -6715,6 +6734,13 @@
         }
 
         try {
+          const readMeta = adminOrders.adminReadMeta || {};
+          const hasActiveHistoricalSearch = Boolean(
+            String(document.getElementById("searchBar")?.value || "").trim(),
+          );
+          if (readMeta.searchMode !== true && !hasActiveHistoricalSearch) {
+            adminRecentOrders = adminOrders.slice();
+          }
           latestAdminOrders = adminOrders.slice();
           if (adminOrders.length === 0) {
             cardsContainer.innerHTML = `
@@ -6761,6 +6787,18 @@
             nextOrders[index] = order;
           }
           latestAdminOrders = nextOrders.slice(0, 100);
+          const recentOrders = adminRecentOrders.slice();
+          const recentIndex = recentOrders.findIndex(
+            (item) => String(item?.orderNo || "") === orderNo,
+          );
+          if (recentIndex >= 0) {
+            recentOrders[recentIndex] = order;
+          } else if (
+            !String(document.getElementById("searchBar")?.value || "").trim()
+          ) {
+            recentOrders.unshift(order);
+          }
+          adminRecentOrders = recentOrders.slice(0, 100);
           moveAdminPageToOrder(orderNo);
           applyCurrentFilter();
           updateStatsCounters();
@@ -14560,10 +14598,59 @@ ${adminNote}
         });
       }
 
-      function handleSearch() {
+      function setAdminSearchStatus(message, isError = false) {
+        const status = document.getElementById("adminSearchStatus");
+        if (!status) return;
+        status.innerText = String(message || "");
+        status.style.color = isError ? "#dc2626" : "";
+      }
+
+      async function loadHistoricalAdminOrderSearch(keyword, requestId) {
+        const adminOrders = await fetchAdminOrdersFromGas({
+          silent: true,
+          query: keyword,
+        });
+        if (
+          requestId !== adminOrderSearchRequestId ||
+          keyword !== String(document.getElementById("searchBar")?.value || "").trim()
+        ) {
+          return;
+        }
+        if (!Array.isArray(adminOrders)) {
+          setAdminSearchStatus("歷史訂單搜尋失敗，請稍後再試。", true);
+          return;
+        }
+        renderAdminOrders(adminOrders);
         syncAdminSearchMatches();
-        adminCurrentPage = 1;
         applyCurrentFilter();
+        const meta = adminOrders.adminReadMeta || {};
+        setAdminSearchStatus(
+          meta.truncated
+            ? "符合結果超過 100 筆，目前顯示最新 100 筆；請輸入更完整的姓名、電話或訂單編號。"
+            : `已搜尋全部歷史訂單，找到 ${adminOrders.length} 筆。`,
+        );
+      }
+
+      function handleSearch() {
+        const keyword = String(
+          document.getElementById("searchBar")?.value || "",
+        ).trim();
+        window.clearTimeout(adminOrderSearchTimer);
+        const requestId = ++adminOrderSearchRequestId;
+        adminCurrentPage = 1;
+        if (!keyword) {
+          latestAdminOrders = adminRecentOrders.slice();
+          setAdminSearchStatus("");
+          syncAdminSearchMatches();
+          applyCurrentFilter();
+          return;
+        }
+        syncAdminSearchMatches();
+        applyCurrentFilter();
+        setAdminSearchStatus("正在搜尋全部歷史訂單…");
+        adminOrderSearchTimer = window.setTimeout(() => {
+          loadHistoricalAdminOrderSearch(keyword, requestId);
+        }, ADMIN_ORDER_SEARCH_DEBOUNCE_MS);
       }
 
       // 彈窗模組開啟關閉
