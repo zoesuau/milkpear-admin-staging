@@ -1463,6 +1463,11 @@
         opacity: 0.45;
       }
 
+      .admin-pagination-bottom {
+        margin-top: 20px;
+        margin-bottom: 12px;
+      }
+
       .order-no {
         font-size: 14px;
         color: #94a3b8;
@@ -4157,6 +4162,16 @@
             <div class="order-change-list"></div>
           </div>
         </div>
+      </div>
+
+      <div
+        class="admin-pagination admin-pagination-bottom"
+        id="adminPaginationBottom"
+        hidden
+      >
+        <button type="button" id="adminPrevPageBtnBottom">上一頁</button>
+        <span id="adminPaginationInfoBottom">第 0-0 張／共 0 張</span>
+        <button type="button" id="adminNextPageBtnBottom">下一頁</button>
       </div>
 
       <div class="sticky-bottom-action-bar">
@@ -13422,12 +13437,6 @@
       }
 
       function updateAdminPagination(totalCount) {
-        const pagination = document.getElementById("adminPagination");
-        const info = document.getElementById("adminPaginationInfo");
-        const prevButton = document.getElementById("adminPrevPageBtn");
-        const nextButton = document.getElementById("adminNextPageBtn");
-        if (!pagination || !info || !prevButton || !nextButton) return;
-
         const totalPages = Math.max(
           1,
           Math.ceil(totalCount / ADMIN_ORDERS_PER_PAGE),
@@ -13440,11 +13449,31 @@
           ? Math.min(adminCurrentPage * ADMIN_ORDERS_PER_PAGE, totalCount)
           : 0;
 
-        pagination.hidden = totalCount <= ADMIN_ORDERS_PER_PAGE;
-        info.innerText = `第 ${startIndex}-${endIndex} 張／共 ${totalCount} 張`;
-        prevButton.disabled = adminBatchProcessing || adminCurrentPage <= 1;
-        nextButton.disabled =
-          adminBatchProcessing || adminCurrentPage >= totalPages;
+        [
+          {
+            paginationId: "adminPagination",
+            infoId: "adminPaginationInfo",
+            prevButtonId: "adminPrevPageBtn",
+            nextButtonId: "adminNextPageBtn",
+          },
+          {
+            paginationId: "adminPaginationBottom",
+            infoId: "adminPaginationInfoBottom",
+            prevButtonId: "adminPrevPageBtnBottom",
+            nextButtonId: "adminNextPageBtnBottom",
+          },
+        ].forEach((controls) => {
+          const pagination = document.getElementById(controls.paginationId);
+          const info = document.getElementById(controls.infoId);
+          const prevButton = document.getElementById(controls.prevButtonId);
+          const nextButton = document.getElementById(controls.nextButtonId);
+          if (!pagination || !info || !prevButton || !nextButton) return;
+          pagination.hidden = totalCount <= ADMIN_ORDERS_PER_PAGE;
+          info.innerText = `第 ${startIndex}-${endIndex} 張／共 ${totalCount} 張`;
+          prevButton.disabled = adminBatchProcessing || adminCurrentPage <= 1;
+          nextButton.disabled =
+            adminBatchProcessing || adminCurrentPage >= totalPages;
+        });
       }
 
       function getAdminPageSlice(items, page, pageSize) {
@@ -14589,6 +14618,28 @@ ${adminNote}
           if (adminBatchProcessing) return;
           adminCurrentPage += 1;
           applyCurrentFilter();
+        });
+
+      document
+        .getElementById("adminPrevPageBtnBottom")
+        .addEventListener("click", () => {
+          if (adminBatchProcessing || adminCurrentPage <= 1) return;
+          adminCurrentPage -= 1;
+          applyCurrentFilter();
+          document
+            .getElementById("cards-container")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        });
+
+      document
+        .getElementById("adminNextPageBtnBottom")
+        .addEventListener("click", () => {
+          if (adminBatchProcessing) return;
+          adminCurrentPage += 1;
+          applyCurrentFilter();
+          document
+            .getElementById("cards-container")
+            ?.scrollIntoView({ behavior: "smooth", block: "start" });
         });
 
       // 搜尋功能
