@@ -11553,7 +11553,28 @@
         );
       }
 
-      function getEzcatExportErrorLabel(code) {
+      function getEzcatInvalidCharacterDetails(candidate, fieldName) {
+        const characters = Array.isArray(
+          candidate?.big5InvalidCharacters?.[fieldName],
+        )
+          ? candidate.big5InvalidCharacters[fieldName]
+          : [];
+        return characters
+          .map((character) => {
+            const token = Array.from(String(character || ""))[0] || "";
+            if (!token) return "";
+            const codePoint = token.codePointAt(0);
+            const visible = /\s/.test(token) ? "空白" : `「${token}」`;
+            return `${visible}（U+${codePoint
+              .toString(16)
+              .toUpperCase()
+              .padStart(4, "0")}）`;
+          })
+          .filter(Boolean)
+          .join("、");
+      }
+
+      function getEzcatExportErrorLabel(code, candidate) {
         const labels = {
           ORDER_CANCELLED: "訂單已取消",
           RECIPIENT_NAME_REQUIRED: "收件人姓名未填",
@@ -11572,7 +11593,28 @@
           RECIPIENT_ADDRESS_BIG5_INVALID: "收件地址含Big5無法匯出的字元",
           SENDER_NAME_BIG5_INVALID: "寄件人姓名含Big5無法匯出的字元",
         };
-        return labels[String(code || "")] || String(code || "資料異常");
+        const normalizedCode = String(code || "");
+        const fieldByCode = {
+          ORDER_NO_BIG5_INVALID: "orderNo",
+          RECIPIENT_NAME_BIG5_INVALID: "recipientName",
+          RECIPIENT_ADDRESS_BIG5_INVALID: "recipientAddress",
+          SENDER_NAME_BIG5_INVALID: "senderName",
+        };
+        const label = labels[normalizedCode] || normalizedCode || "資料異常";
+        const fieldName = fieldByCode[normalizedCode];
+        const details = fieldName
+          ? getEzcatInvalidCharacterDetails(candidate, fieldName)
+          : "";
+        return details ? `${label}：${details}` : label;
+      }
+
+      function getEzcatAutoCleanedFieldLabel(fieldName) {
+        const labels = {
+          recipientName: "收件人姓名",
+          recipientAddress: "收件地址",
+          senderName: "寄件人姓名",
+        };
+        return labels[String(fieldName || "")] || String(fieldName || "");
       }
 
       function getEzcatReexportReasonLabel(reason) {
@@ -11855,7 +11897,19 @@
             const stateLines = [];
             if (errors.length) {
               stateLines.push(
-                errors.map(getEzcatExportErrorLabel).join("、"),
+                errors
+                  .map((code) => getEzcatExportErrorLabel(code, candidate))
+                  .join("、"),
+              );
+            }
+            const autoCleanedFields = Array.isArray(candidate.autoCleanedFields)
+              ? candidate.autoCleanedFields
+              : [];
+            if (autoCleanedFields.length) {
+              stateLines.push(
+                `匯出時已自動清理：${autoCleanedFields
+                  .map(getEzcatAutoCleanedFieldLabel)
+                  .join("、")}`,
               );
             }
             if (candidate.hasExportHistory) {
