@@ -5030,6 +5030,7 @@
       const ADMIN_AUTH_TIMEOUT_MS = 15000;
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 15000;
+      const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
       const ADMIN_SHIPPING_NOTICE_TIMEOUT_MS = 60000;
       const ADMIN_INITIAL_LOAD_SLOW_MS = 12000;
 
@@ -5054,6 +5055,7 @@
       let adminBackgroundRefreshTimer = null;
       let adminBackgroundRefreshRequestId = 0;
       let adminCreateOrderSubmitting = false;
+      let adminCreateRequestContext = null;
       let adminSelectedCustomer = null;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
@@ -5219,6 +5221,32 @@
           .join("|")
           .replace(/\s+/g, "")
           .slice(0, 160);
+      }
+
+      function getAdminCreatePayloadFingerprint(payload) {
+        const comparable = { ...payload };
+        delete comparable.adminSessionToken;
+        delete comparable.requestKey;
+        return JSON.stringify(comparable);
+      }
+
+      function ensureAdminCreateRequestContext(payload) {
+        const fingerprint = getAdminCreatePayloadFingerprint(payload);
+        if (
+          adminCreateRequestContext &&
+          adminCreateRequestContext.fingerprint === fingerprint
+        ) {
+          return adminCreateRequestContext;
+        }
+        const nonce =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID()
+            : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        adminCreateRequestContext = {
+          fingerprint,
+          requestKey: createAdminRequestKey("adminCreateOrder", [nonce]),
+        };
+        return adminCreateRequestContext;
       }
 
       function clearAdminAuthSession() {
@@ -6543,16 +6571,6 @@
 
       async function fetchAdminOrdersFromGas(options = {}) {
         const silent = options && options.silent === true;
-        const query = String(
-          options && Object.prototype.hasOwnProperty.call(options, "query")
-            ? options.query
-            : document.getElementById("searchBar")?.value || "",
-        ).trim();
-        const requestedPage = Math.max(
-          1,
-          Number(options?.page ?? adminCurrentPage) || 1,
-        );
-        const dateRange = getAdminServerDateRange();
         const adminReadStatusEl = document.getElementById("adminReadStatus");
 
         try {
@@ -6581,14 +6599,7 @@
               body: JSON.stringify({
                 action: "adminReadOrders",
                 adminSessionToken,
-                viewMode: "filtered",
-                query,
-                statusFilter: currentFilterStatus,
-                notificationFilter: currentNotificationFilter,
-                dateStart: dateRange.dateStart,
-                dateEnd: dateRange.dateEnd,
-                page: requestedPage,
-                pageSize: ADMIN_ORDERS_PER_PAGE,
+                viewMode: "complete",
               }),
             },
             ADMIN_READ_ORDERS_TIMEOUT_MS,
@@ -6685,35 +6696,14 @@
 
       async function loadAdminOrdersForCurrentView(options = {}) {
         const page = Math.max(1, Number(options?.page ?? adminCurrentPage) || 1);
-        const requestId = ++adminOrderQueryRequestId;
-        const keyword = String(
-          document.getElementById("searchBar")?.value || "",
-        ).trim();
-        if (options?.showStatus !== false) {
-          setAdminSearchStatus(
-            keyword ? "正在搜尋全部歷史訂單…" : "正在讀取完整條件訂單…",
-          );
-        }
-        const adminOrders = await fetchAdminOrdersFromGas({
-          silent: options?.silent !== false,
-          page,
-          query: keyword,
-        });
-        if (requestId !== adminOrderQueryRequestId) return false;
-        if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
-          setAdminSearchStatus("訂單讀取失敗，請稍後再試。", true);
-          return false;
-        }
+        adminCurrentPage = page;
         updateStatsCounters();
         applyCurrentFilter();
         handleBatchCheckChange();
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
-        setAdminSearchStatus(
-          keyword
-            ? `已搜尋全部歷史訂單，找到 ${adminOrderReadMeta.totalCount} 筆。`
-            : "",
-        );
+        const keyword = String(document.getElementById("searchBar")?.value || "").trim();
+        setAdminSearchStatus(keyword ? `已從完整訂單中找到 ${getFilteredAdminCards().length} 筆。` : "");
         return true;
       }
 
@@ -6934,9 +6924,9 @@
           if (index === -1) {
             nextOrders.unshift(order);
           } else {
-            nextOrders[index] = order;
+            nextOrders[index] = { ...nextOrders[index], ...order };
           }
-          latestAdminOrders = nextOrders.slice(0, ADMIN_ORDERS_PER_PAGE);
+          latestAdminOrders = nextOrders;
           moveAdminPageToOrder(orderNo);
           applyCurrentFilter();
           updateStatsCounters();
@@ -6990,7 +6980,7 @@
         options = {},
       ) {
         if (!replaceAdminOrderLocally(order, restoreState)) return false;
-        if (options.refreshInBackground !== false) {
+        if (options.refreshInBackground === true) {
           refreshAdminOrdersInBackground();
         }
         return true;
@@ -11512,7 +11502,7 @@
         adminCurrentPage = 1;
         setActiveFilterButton("dateFilterRow", btnElement);
         document.getElementById("customDateRange")?.classList.remove("active");
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function printShippingManifest() {
@@ -12874,7 +12864,7 @@
             document
               .getElementById("customDateRange")
               ?.classList.remove("active");
-            loadAdminOrdersForCurrentView({ page: 1 });
+            applyCurrentFilter();
           });
         const shippingManifestDateInput = document.getElementById(
           "shippingManifestDateInput",
@@ -13232,7 +13222,7 @@
           setCustomDateRange(start, dateValue);
         }
 
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function moveCustomDateCalendarMonth(offset) {
@@ -13247,7 +13237,7 @@
         currentFilterStatus = status;
         adminCurrentPage = 1;
         setActiveFilterButton("statusFilterRow", btnElement);
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function filterByDateRange(range, btnElement) {
@@ -13270,7 +13260,7 @@
           setCustomCalendarMonth(seed.year, seed.month);
           renderCustomDateCalendar();
         }
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function handleCustomDateRangeChange() {
@@ -13278,14 +13268,14 @@
         adminCurrentPage = 1;
         document.getElementById("customDateRange")?.classList.add("active");
         renderCustomDateCalendar();
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function filterByNotificationMode(mode, btnElement) {
         currentNotificationFilter = mode;
         adminCurrentPage = 1;
         setActiveFilterButton("notificationFilterRow", btnElement);
-        loadAdminOrdersForCurrentView({ page: 1 });
+        applyCurrentFilter();
       }
 
       function getAdminFilterCardDate(card) {
@@ -13574,6 +13564,10 @@
           1,
           Math.ceil(totalCount / ADMIN_ORDERS_PER_PAGE),
         );
+        if (adminOrderReadMeta.serverFiltered !== true) {
+          adminOrderReadMeta.totalCount = totalCount;
+          adminOrderReadMeta.totalPages = totalPages;
+        }
         adminCurrentPage = Math.min(Math.max(adminCurrentPage, 1), totalPages);
         const startIndex = totalCount
           ? (adminCurrentPage - 1) * ADMIN_ORDERS_PER_PAGE + 1
@@ -14541,7 +14535,11 @@ ${adminNote}
           allSelectedFound &&
           selectedOrders.every(isBatchShippableOrder);
         const visibleCheckboxes = getVisibleSelectableCheckboxes();
-        updateAdminPagination(getFilteredAdminCards().length);
+        updateAdminPagination(
+          adminOrderReadMeta.serverFiltered === true
+            ? adminOrderReadMeta.totalCount
+            : getFilteredAdminCards().length,
+        );
         const visibleSelectedCount = visibleCheckboxes.filter((checkbox) =>
           selectedOrderNos.has(String(checkbox.dataset.orderNo || "").trim()),
         ).length;
@@ -14749,7 +14747,8 @@ ${adminNote}
         .getElementById("adminPrevPageBtn")
         .addEventListener("click", () => {
           if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 });
+          adminCurrentPage -= 1;
+          applyCurrentFilter();
         });
 
       document
@@ -14759,14 +14758,16 @@ ${adminNote}
             adminBatchProcessing ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 });
+          adminCurrentPage += 1;
+          applyCurrentFilter();
         });
 
       document
         .getElementById("adminPrevPageBtnBottom")
         .addEventListener("click", () => {
           if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 });
+          adminCurrentPage -= 1;
+          applyCurrentFilter();
           document
             .getElementById("cards-container")
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -14779,7 +14780,8 @@ ${adminNote}
             adminBatchProcessing ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 });
+          adminCurrentPage += 1;
+          applyCurrentFilter();
           document
             .getElementById("cards-container")
             ?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -14812,7 +14814,13 @@ ${adminNote}
         adminOrderSearchRequestId += 1;
         adminCurrentPage = 1;
         adminOrderSearchTimer = window.setTimeout(() => {
-          loadAdminOrdersForCurrentView({ page: 1 });
+          applyCurrentFilter();
+          const count = getFilteredAdminCards().length;
+          setAdminSearchStatus(
+            String(document.getElementById("searchBar")?.value || "").trim()
+              ? `已從完整訂單中找到 ${count} 筆。`
+              : "",
+          );
         }, ADMIN_ORDER_SEARCH_DEBOUNCE_MS);
       }
 
@@ -15397,6 +15405,9 @@ ${adminNote}
           items,
         };
 
+        ensureAdminCreateRequestContext(payload);
+        payload.requestKey = adminCreateRequestContext.requestKey;
+
         if (
           !payload.adminSessionToken ||
           !payload.recipientName ||
@@ -15422,13 +15433,17 @@ ${adminNote}
         feedback.innerText = "";
 
         try {
-          const response = await fetch(GAS_ORDERS_API_URL, {
-            method: "POST",
-            headers: {
-              "Content-Type": "text/plain;charset=utf-8",
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "text/plain;charset=utf-8",
+              },
+              body: JSON.stringify(payload),
             },
-            body: JSON.stringify(payload),
-          });
+            ADMIN_CREATE_ORDER_TIMEOUT_MS,
+          );
           const result = await response.json();
           if (
             !response.ok ||
@@ -15445,6 +15460,7 @@ ${adminNote}
             const createError = new Error(
               result?.errorCode || "ORDER_CREATE_FAILED",
             );
+            createError.serverConfirmed = true;
             createError.shortages = Array.isArray(result?.shortages)
               ? result.shortages
               : [];
@@ -15452,6 +15468,7 @@ ${adminNote}
           }
 
           const createdOrderNo = String(result.created.orderNo).trim();
+          adminCreateRequestContext = null;
           if (
             !result.order ||
             String(result.order.orderNo || "").trim() !== createdOrderNo
@@ -15480,6 +15497,18 @@ ${adminNote}
             feedback.innerText =
               "訂單已建立，但畫面未能加入新卡片。請重新整理後確認訂單編號，請勿重複建立。";
             submitButton.innerText = "請先重新整理確認";
+            return;
+          }
+          if (
+            error?.name === "AbortError" ||
+            error?.serverConfirmed !== true ||
+            error?.message === "ORDER_CREATE_INDETERMINATE"
+          ) {
+            adminCreateOrderSubmitting = false;
+            submitButton.disabled = false;
+            submitButton.innerText = "查核建立結果";
+            feedback.innerText =
+              "連線中斷，訂單可能已建立。請按「查核建立結果」一次；系統會使用同一識別碼查詢，不會重複建立或重扣庫存。";
             return;
           }
           adminCreateOrderSubmitting = false;
