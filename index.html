@@ -5027,7 +5027,7 @@
       const ADMIN_LINE_CODE_VERIFIER_KEY = "milkpear_admin_line_code_verifier";
       const ADMIN_LINE_SESSION_TOKEN_KEY = "milkpear_admin_session_token";
       const ADMIN_DISPLAY_NAME_KEY = "milkpear_admin_display_name";
-      const ADMIN_AUTH_TIMEOUT_MS = 15000;
+      const ADMIN_AUTH_TIMEOUT_MS = 60000;
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
@@ -5260,6 +5260,27 @@
         history.replaceState({}, document.title, cleanUrl);
       }
 
+      function hasRetryableAdminAuthCallback() {
+        const params = new URLSearchParams(window.location.search);
+        const returnedState = params.get("state");
+        return !!(
+          params.get("code") &&
+          returnedState &&
+          returnedState === sessionStorage.getItem(ADMIN_LINE_STATE_KEY) &&
+          sessionStorage.getItem(ADMIN_LINE_NONCE_KEY) &&
+          sessionStorage.getItem(ADMIN_LINE_CODE_VERIFIER_KEY)
+        );
+      }
+
+      function setAdminAuthRetryButtonMode(retryCallback) {
+        const retryBtn = document.getElementById("adminAuthRetryBtn");
+        if (!retryBtn) return;
+        retryBtn.dataset.retryCallback = retryCallback ? "true" : "false";
+        retryBtn.innerText = retryCallback
+          ? "再次確認登入"
+          : "重新登入 LINE";
+      }
+
       function base64UrlEncode(bytes) {
         let binary = "";
         bytes.forEach((byte) => {
@@ -5291,6 +5312,7 @@
       }
 
       async function startAdminAuth(forceLogin = false) {
+        setAdminAuthRetryButtonMode(false);
         if (!isLineLoginConfigured()) {
           clearAdminAuthSession();
           sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
@@ -5384,21 +5406,30 @@
             }
             clearAdminAuthSession();
             clearAdminAuthQuery();
+            setAdminAuthRetryButtonMode(false);
             showAdminAuthOverlay("正在讀取最新訂單資料...", false);
             return true;
           }
 
+          const errorCode = String(payload?.error || "").trim();
           clearAdminAuthSession();
           sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
           clearAdminAuthQuery();
-          showAdminAuthOverlay("⚠️ 非白名單管理員，請重新登入 LINE", true);
+          setAdminAuthRetryButtonMode(false);
+          showAdminAuthOverlay(
+            payload?.ok === true && payload?.allowed === false
+              ? "⚠️ 非白名單管理員，請重新登入 LINE"
+              : errorCode === "LINE_AUTH_CONFIG_MISSING" ||
+                  errorCode === "INVALID_REDIRECT_URI"
+                ? "⚠️ 管理員登入設定異常，請聯絡系統管理員。"
+                : "⚠️ LINE 登入驗證未完成，請重新登入 LINE",
+            true,
+          );
           return false;
         } catch (error) {
-          clearAdminAuthSession();
-          sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
-          clearAdminAuthQuery();
+          setAdminAuthRetryButtonMode(hasRetryableAdminAuthCallback());
           showAdminAuthOverlay(
-            "⚠️ LINE 登入驗證失敗，請確認網路後再試。",
+            "⚠️ 登入確認暫時沒有回應，請按下方再次確認；不需要重新進入 LINE。",
             true,
             false,
             true,
@@ -12865,6 +12896,13 @@
         const closeBtn = document.getElementById("adminAuthCloseBtn");
         if (retryBtn) {
           retryBtn.addEventListener("click", () => {
+            if (
+              retryBtn.dataset.retryCallback === "true" &&
+              hasRetryableAdminAuthCallback()
+            ) {
+              window.location.reload();
+              return;
+            }
             startAdminAuth(true);
           });
         }
