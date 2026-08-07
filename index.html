@@ -941,6 +941,39 @@
         font: inherit;
       }
 
+      .shipping-manifest-ordering {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: end;
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .shipping-manifest-ordering label {
+        display: grid;
+        gap: 5px;
+        min-width: min(100%, 240px);
+        color: #475569;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .shipping-manifest-ordering select {
+        box-sizing: border-box;
+        width: 100%;
+        min-height: 40px;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1f2937;
+        padding: 7px 9px;
+        font: inherit;
+      }
+
+      .shipping-manifest-priority-sender[hidden] {
+        display: none;
+      }
+
       .shipping-manifest-panel.is-empty .shipping-manifest-table-wrap {
         display: none;
       }
@@ -4252,6 +4285,32 @@
             />
           </label>
         </div>
+        <div class="shipping-manifest-ordering">
+          <label>
+            出貨總表排列方式
+            <select
+              id="shippingManifestSortMode"
+              onchange="setShippingManifestSortMode(this.value)"
+            >
+              <option value="original">原本順序</option>
+              <option value="sender_grouped">依寄件人集中排列</option>
+              <option value="priority_sender">指定寄件人排最前面</option>
+            </select>
+          </label>
+          <label
+            class="shipping-manifest-priority-sender"
+            id="shippingManifestPrioritySenderWrap"
+            hidden
+          >
+            優先寄件人
+            <select
+              id="shippingManifestPrioritySender"
+              onchange="setShippingManifestPrioritySender(this.value)"
+            >
+              <option value="">請選擇寄件人</option>
+            </select>
+          </label>
+        </div>
       </div>
 
       <div class="shipping-blackcat-operations">
@@ -4286,7 +4345,8 @@
             請先選擇單一出貨日期
           </div>
           <div class="shipping-operation-note">
-            已匯出或已有宅配單號的訂單不會自動勾選。
+            已匯出或已有宅配單號的訂單不會自動勾選。首次使用新版 CSV
+            時，請將 EZcat 第 12 欄設定為「備註」並儲存欄位格式。
           </div>
         </section>
 
@@ -5078,6 +5138,8 @@
       let currentDateFilter = "全部";
       let currentNotificationFilter = "全部";
       let shippingManifestDateMode = "today";
+      let shippingManifestSortMode = "original";
+      let shippingManifestPrioritySenderKey = "";
       let shippingTrackingImportPreview = null;
       let shippingTrackingImportSubmitting = false;
       let ezcatExportCandidates = [];
@@ -11005,6 +11067,144 @@
         }).format(date);
       }
 
+      function normalizeShippingManifestSenderKey(value) {
+        return String(value || "")
+          .replace(/[\u200B-\u200D\u2060\uFE00-\uFE0F\uFEFF]/g, "")
+          .replace(/\uDB40[\uDD00-\uDDEF]/g, "")
+          .replace(/[\s\u00A0\u3000]+/g, "")
+          .replace(/[-\u2010-\u2015\uFE58\uFE63\uFF0D]+/g, "")
+          .trim();
+      }
+
+      function getShippingManifestSenderName(order) {
+        return String(order?.buyerName || "").trim() || "未填寄件人";
+      }
+
+      function getShippingManifestSenderMeta(orders) {
+        const senderMeta = new Map();
+        orders.forEach((order, index) => {
+          const senderName = getShippingManifestSenderName(order);
+          const senderKey =
+            normalizeShippingManifestSenderKey(senderName) || senderName;
+          const current = senderMeta.get(senderKey) || {
+            key: senderKey,
+            name: senderName,
+            orderCount: 0,
+            boxCount: 0,
+            firstIndex: index,
+          };
+          current.orderCount += 1;
+          current.boxCount += getShippingManifestOrderBoxCount(order);
+          senderMeta.set(senderKey, current);
+        });
+        return senderMeta;
+      }
+
+      function applyShippingManifestOrdering(orders) {
+        const baseOrders = orders.slice();
+        if (shippingManifestSortMode === "original") return baseOrders;
+        const senderMeta = getShippingManifestSenderMeta(baseOrders);
+        return baseOrders
+          .map((order, index) => ({
+            order,
+            index,
+            senderKey:
+              normalizeShippingManifestSenderKey(
+                getShippingManifestSenderName(order),
+              ) || getShippingManifestSenderName(order),
+          }))
+          .sort((a, b) => {
+            if (shippingManifestSortMode === "priority_sender") {
+              const aPriority =
+                !!shippingManifestPrioritySenderKey &&
+                a.senderKey === shippingManifestPrioritySenderKey;
+              const bPriority =
+                !!shippingManifestPrioritySenderKey &&
+                b.senderKey === shippingManifestPrioritySenderKey;
+              if (aPriority !== bPriority) return aPriority ? -1 : 1;
+              return a.index - b.index;
+            }
+            const firstIndexDifference =
+              Number(senderMeta.get(a.senderKey)?.firstIndex ?? a.index) -
+              Number(senderMeta.get(b.senderKey)?.firstIndex ?? b.index);
+            return firstIndexDifference || a.index - b.index;
+          })
+          .map((item) => item.order);
+      }
+
+      function syncShippingManifestOrderingControls(orders) {
+        const modeSelect = document.getElementById(
+          "shippingManifestSortMode",
+        );
+        const senderWrap = document.getElementById(
+          "shippingManifestPrioritySenderWrap",
+        );
+        const senderSelect = document.getElementById(
+          "shippingManifestPrioritySender",
+        );
+        if (modeSelect) modeSelect.value = shippingManifestSortMode;
+        if (senderWrap) {
+          senderWrap.hidden = shippingManifestSortMode !== "priority_sender";
+        }
+        if (!senderSelect) return;
+        const senderMeta = getShippingManifestSenderMeta(orders);
+        if (
+          shippingManifestPrioritySenderKey &&
+          !senderMeta.has(shippingManifestPrioritySenderKey)
+        ) {
+          shippingManifestPrioritySenderKey = "";
+        }
+        senderSelect.innerHTML = `
+          <option value="">請選擇寄件人</option>
+          ${[...senderMeta.values()]
+            .sort((a, b) => a.firstIndex - b.firstIndex)
+            .map(
+              (sender) => `
+                <option value="${escapeHtml(sender.key)}">
+                  ${escapeHtml(sender.name)}（${escapeHtml(sender.orderCount)}筆／${escapeHtml(sender.boxCount)}盒）
+                </option>
+              `,
+            )
+            .join("")}
+        `;
+        senderSelect.value = shippingManifestPrioritySenderKey;
+        senderSelect.disabled = senderMeta.size === 0;
+      }
+
+      function setShippingManifestSortMode(mode) {
+        shippingManifestSortMode = [
+          "original",
+          "sender_grouped",
+          "priority_sender",
+        ].includes(mode)
+          ? mode
+          : "original";
+        renderShippingManifest();
+      }
+
+      function setShippingManifestPrioritySender(senderKey) {
+        shippingManifestPrioritySenderKey = String(senderKey || "");
+        renderShippingManifest();
+      }
+
+      function getShippingManifestOrderingSummary(orders) {
+        if (shippingManifestSortMode === "sender_grouped") {
+          return "排列：寄件人集中";
+        }
+        if (
+          shippingManifestSortMode !== "priority_sender" ||
+          !shippingManifestPrioritySenderKey
+        ) {
+          return "";
+        }
+        const sender = getShippingManifestSenderMeta(orders).get(
+          shippingManifestPrioritySenderKey,
+        );
+        return sender
+          ? `優先寄件人：${sender.name}（${sender.orderCount}筆／${sender.boxCount}盒）`
+          : "";
+      }
+
       function getShippingManifestOrdersForRange(startDateString, endDateString) {
         const startDate = normalizeAdminDateValue(startDateString);
         const endDate = normalizeAdminDateValue(endDateString);
@@ -11014,7 +11214,7 @@
           shippingManifestRemoteRangeKey === rangeKey
             ? shippingManifestRemoteOrders
             : latestAdminOrders;
-        return sourceOrders
+        const baseOrders = sourceOrders
           .filter((order) => {
             const status = String(order?.orderStatus || "").trim();
             const expectedShippingDate = normalizeAdminDateValue(
@@ -11044,6 +11244,7 @@
               "zh-Hant",
             );
           });
+        return applyShippingManifestOrdering(baseOrders);
       }
 
       function mapShippingManifestRemoteOrder(candidate, candidateIndex) {
@@ -11455,6 +11656,7 @@
         const orders = hasValidDateRange
           ? getShippingManifestOrdersForRange(startDate, endDate)
           : [];
+        syncShippingManifestOrderingControls(orders);
         const stats = buildShippingManifestStats(orders);
         const productSummaryText = buildShippingManifestProductSummary(stats);
         const dateLabel = hasValidDateRange
@@ -11463,8 +11665,9 @@
             : `${formatShippingManifestDate(startDate)}～${formatShippingManifestDate(endDate)}`
           : "—";
 
+        const orderingSummary = getShippingManifestOrderingSummary(orders);
         subtitle.innerText = hasValidDateRange
-          ? `${isRangeMode ? "出貨區間" : "出貨日期"}：${dateLabel}｜列印時間：${formatShippingManifestPrintTime()}`
+          ? `${isRangeMode ? "出貨區間" : "出貨日期"}：${dateLabel}｜列印時間：${formatShippingManifestPrintTime()}${orderingSummary ? `｜${orderingSummary}` : ""}`
           : isRangeMode && startDate && endDate && startDate > endDate
             ? "開始日期不可晚於結束日期"
             : "請選擇出貨日期或日期區間";
@@ -11623,6 +11826,7 @@
           RECIPIENT_NAME_BIG5_INVALID: "收件人姓名含Big5無法匯出的字元",
           RECIPIENT_ADDRESS_BIG5_INVALID: "收件地址含Big5無法匯出的字元",
           SENDER_NAME_BIG5_INVALID: "寄件人姓名含Big5無法匯出的字元",
+          CUSTOMER_NOTE_BIG5_INVALID: "客戶備註含Big5無法匯出的字元",
         };
         const normalizedCode = String(code || "");
         const fieldByCode = {
@@ -11630,6 +11834,7 @@
           RECIPIENT_NAME_BIG5_INVALID: "recipientName",
           RECIPIENT_ADDRESS_BIG5_INVALID: "recipientAddress",
           SENDER_NAME_BIG5_INVALID: "senderName",
+          CUSTOMER_NOTE_BIG5_INVALID: "customerNote",
         };
         const label = labels[normalizedCode] || normalizedCode || "資料異常";
         const fieldName = fieldByCode[normalizedCode];
@@ -11644,6 +11849,7 @@
           recipientName: "收件人姓名",
           recipientAddress: "收件地址",
           senderName: "寄件人姓名",
+          customerNote: "客戶備註",
         };
         return labels[String(fieldName || "")] || String(fieldName || "");
       }
@@ -11747,6 +11953,12 @@
             text: `寄件人：${candidate.senderName}${
               candidate.senderPhone ? `｜${candidate.senderPhone}` : ""
             }`,
+            className: "is-exception",
+          });
+        }
+        if (candidate.ezcatNote) {
+          lines.push({
+            text: `黑貓備註：${candidate.ezcatNote}`,
             className: "is-exception",
           });
         }
