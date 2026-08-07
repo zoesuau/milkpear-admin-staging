@@ -3556,6 +3556,128 @@
         color: #be123c;
       }
 
+      .shipping-batch-management {
+        border: 1px solid #dbe6df;
+        border-radius: 14px;
+        margin-top: 18px;
+        padding: 14px;
+        background: #f8fbf9;
+      }
+
+      .shipping-batch-management-header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 12px;
+      }
+
+      .shipping-batch-management-header h3 {
+        color: #334155;
+        font-size: 16px;
+        margin: 0 0 4px;
+      }
+
+      .shipping-batch-management-header p {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.5;
+        margin: 0;
+      }
+
+      .shipping-batch-management-actions,
+      .shipping-batch-card-actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .shipping-batch-list {
+        display: grid;
+        gap: 10px;
+      }
+
+      .shipping-batch-card {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px 14px;
+        padding: 14px;
+        border: 1px solid #dfe8e2;
+        border-radius: 12px;
+        background: white;
+      }
+
+      .shipping-batch-card.is-closed {
+        background: #f8fafc;
+      }
+
+      .shipping-batch-card-title {
+        color: #334155;
+        font-weight: 900;
+      }
+
+      .shipping-batch-card-meta {
+        color: #64748b;
+        font-size: 12px;
+        line-height: 1.5;
+        margin-top: 3px;
+      }
+
+      .shipping-batch-card-actions {
+        grid-column: 1 / -1;
+      }
+
+      .shipping-batch-status {
+        display: inline-flex;
+        width: fit-content;
+        padding: 4px 9px;
+        border-radius: 999px;
+        background: #dcfce7;
+        color: #166534;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .shipping-batch-status.expired,
+      .shipping-batch-status.manually_closed {
+        background: #e2e8f0;
+        color: #475569;
+      }
+
+      .shipping-batch-empty {
+        padding: 20px;
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        color: #64748b;
+        text-align: center;
+      }
+
+      .shipping-batch-form-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .shipping-batch-form-grid .full {
+        grid-column: 1 / -1;
+      }
+
+      @media (max-width: 560px) {
+        .shipping-batch-management-header,
+        .shipping-batch-card {
+          display: flex;
+          flex-direction: column;
+        }
+
+        .shipping-batch-form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .shipping-batch-form-grid .full {
+          grid-column: auto;
+        }
+      }
+
       .product-card-list {
         display: grid;
         gap: 18px;
@@ -4505,6 +4627,38 @@
             id="productManagementFeedback"
           ></div>
           <div class="product-card-list" id="product-management-list"></div>
+          <section class="shipping-batch-management" aria-labelledby="shippingBatchManagementTitle">
+            <div class="shipping-batch-management-header">
+              <div>
+                <h3 id="shippingBatchManagementTitle">希望寄出批次管理</h3>
+                <p>截止日預設為寄出結束日前一天，時間預設為台灣時間 18:00。</p>
+              </div>
+              <div class="shipping-batch-management-actions">
+                <button
+                  type="button"
+                  class="product-action-btn secondary"
+                  onclick="fetchAdminShippingBatchesFromGas(true)"
+                >
+                  重新整理
+                </button>
+                <button
+                  type="button"
+                  class="product-action-btn primary"
+                  onclick="openShippingBatchModal()"
+                >
+                  新增批次
+                </button>
+              </div>
+            </div>
+            <div
+              class="product-management-feedback"
+              id="shippingBatchManagementFeedback"
+              aria-live="polite"
+            ></div>
+            <div class="shipping-batch-list" id="shipping-batch-management-list">
+              <div class="shipping-batch-empty">進入商品管理後讀取批次資料。</div>
+            </div>
+          </section>
           <div class="product-banner-admin">
             <h3>前台廣告圖</h3>
             <div class="product-banner-editor">
@@ -4678,6 +4832,69 @@
             onclick="saveProductAddModal()"
           >
             建立商品
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal-overlay" id="shippingBatchModal">
+      <div class="modal-container" style="max-width: 620px">
+        <div class="modal-header">
+          <h3 id="shippingBatchModalTitle">新增希望寄出批次</h3>
+          <button
+            type="button"
+            class="modal-close-btn"
+            aria-label="關閉寄出批次編輯"
+            onclick="closeShippingBatchModal()"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="shippingBatchId" />
+          <div class="shipping-batch-form-grid">
+            <div class="product-field full">
+              <label for="shippingBatchDisplayLabel">前台顯示名稱</label>
+              <input id="shippingBatchDisplayLabel" maxlength="120" />
+            </div>
+            <div class="product-field">
+              <label for="shippingBatchStartDate">寄出開始日</label>
+              <input id="shippingBatchStartDate" type="date" />
+            </div>
+            <div class="product-field">
+              <label for="shippingBatchEndDate">寄出結束日</label>
+              <input id="shippingBatchEndDate" type="date" />
+            </div>
+            <div class="product-field full">
+              <label for="shippingBatchCutoffAt">收單截止日期與時間</label>
+              <input id="shippingBatchCutoffAt" type="datetime-local" />
+            </div>
+            <label class="full" style="display:flex;gap:8px;align-items:center;color:#475569;font-weight:800;">
+              <input id="shippingBatchIsActive" type="checkbox" checked />
+              開放給前台客戶選擇
+            </label>
+          </div>
+          <div
+            class="product-management-feedback"
+            id="shippingBatchModalFeedback"
+            aria-live="polite"
+          ></div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-modal-cancel"
+            onclick="closeShippingBatchModal()"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn btn-modal-submit"
+            id="shippingBatchSaveButton"
+            onclick="saveShippingBatchModal()"
+          >
+            儲存批次
           </button>
         </div>
       </div>
@@ -5113,6 +5330,9 @@
       let adminSiteSettings = {
         bannerImageUrl: "assets/sanheyuan-banner.png",
       };
+      let adminShippingBatches = [];
+      let adminShippingBatchesLoaded = false;
+      let adminShippingBatchSubmitting = false;
       let adminProductsReady = false;
       let latestAdminOrders = [];
       let adminOrderReadMeta = {
@@ -5585,10 +5805,418 @@
           button.classList.toggle("active", button.dataset.tab === tabName);
         });
 
-        if (tabName === "products") renderProductManagement();
+        if (tabName === "products") {
+          renderProductManagement();
+          if (!adminShippingBatchesLoaded) fetchAdminShippingBatchesFromGas();
+        }
         if (tabName === "shippingPrint") {
           renderShippingManifest();
           loadCompleteShippingManifestOrders();
+        }
+      }
+
+      function setShippingBatchManagementFeedback(message, type = "") {
+        const feedback = document.getElementById(
+          "shippingBatchManagementFeedback",
+        );
+        if (!feedback) return;
+        feedback.className = `product-management-feedback ${type}`.trim();
+        feedback.innerText = message || "";
+      }
+
+      function getAdminShippingBatchStatusLabel(status) {
+        if (status === "open") return "開放中";
+        if (status === "expired") return "時間截止";
+        if (status === "manually_closed") return "人工關閉";
+        return "狀態待確認";
+      }
+
+      function renderShippingBatchManagement() {
+        const list = document.getElementById(
+          "shipping-batch-management-list",
+        );
+        if (!list) return;
+        if (!adminShippingBatchesLoaded) {
+          list.innerHTML =
+            '<div class="shipping-batch-empty">批次資料尚未讀取。</div>';
+          return;
+        }
+        if (!adminShippingBatches.length) {
+          list.innerHTML =
+            '<div class="shipping-batch-empty">目前沒有批次，請按「新增批次」。</div>';
+          return;
+        }
+
+        list.innerHTML = adminShippingBatches
+          .slice()
+          .sort((a, b) =>
+            String(a.shippingStartDate || "").localeCompare(
+              String(b.shippingStartDate || ""),
+            ),
+          )
+          .map((batch) => {
+            const status = String(batch.status || "");
+            const isOpen = status === "open";
+            const cutoffText = batch.cutoffAt
+              ? String(batch.cutoffAt).replace("T", " ")
+              : "尚未設定（維持手動控制）";
+            const activeOrderCount = Number(batch.activeOrderCount || 0);
+            const totalOrderCount = Number(batch.orderCount || 0);
+            return `
+              <article class="shipping-batch-card${isOpen ? "" : " is-closed"}" data-batch-id="${escapeHtml(batch.batchId)}">
+                <div>
+                  <div class="shipping-batch-card-title">${escapeHtml(batch.displayLabel || batch.batchId)}</div>
+                  <div class="shipping-batch-card-meta">寄出區間：${escapeHtml(batch.shippingStartDate)}～${escapeHtml(batch.shippingEndDate)}</div>
+                </div>
+                <div>
+                  <span class="shipping-batch-status ${escapeHtml(status)}">${escapeHtml(getAdminShippingBatchStatusLabel(status))}</span>
+                  <div class="shipping-batch-card-meta">截止：${escapeHtml(cutoffText)}</div>
+                  <div class="shipping-batch-card-meta">有效訂單 ${escapeHtml(activeOrderCount)} 筆${totalOrderCount !== activeOrderCount ? `｜含取消共 ${escapeHtml(totalOrderCount)} 筆` : ""}</div>
+                </div>
+                <div class="shipping-batch-card-actions">
+                  <button type="button" class="product-action-btn secondary" onclick="openShippingBatchModal('${escapeHtml(batch.batchId)}')">編輯</button>
+                  ${isOpen ? `<button type="button" class="product-action-btn danger" onclick="closeAdminShippingBatch('${escapeHtml(batch.batchId)}')">立即關閉</button>` : ""}
+                </div>
+              </article>
+            `;
+          })
+          .join("");
+      }
+
+      async function fetchAdminShippingBatchesFromGas(force = false) {
+        if (adminShippingBatchesLoaded && !force) {
+          renderShippingBatchManagement();
+          return adminShippingBatches;
+        }
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          setShippingBatchManagementFeedback(
+            "登入已過期，請重新登入 LINE。",
+            "error",
+          );
+          return null;
+        }
+        setShippingBatchManagementFeedback("讀取批次資料中...");
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminReadShippingBatches",
+                adminSessionToken,
+              }),
+            },
+            ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            payload?.action !== "adminReadShippingBatches" ||
+            !Array.isArray(payload.batches)
+          ) {
+            throw new Error(payload?.error || "SHIPPING_BATCHES_READ_FAILED");
+          }
+          adminShippingBatches = payload.batches.slice();
+          adminShippingBatchesLoaded = true;
+          setShippingBatchManagementFeedback(
+            `已讀取 ${adminShippingBatches.length} 個批次。`,
+            "success",
+          );
+          renderShippingBatchManagement();
+          return adminShippingBatches;
+        } catch (error) {
+          console.error("讀取希望寄出批次失敗", error);
+          adminShippingBatchesLoaded = false;
+          setShippingBatchManagementFeedback(
+            "批次資料讀取失敗，請稍後重新整理。",
+            "error",
+          );
+          renderShippingBatchManagement();
+          return null;
+        }
+      }
+
+      function shiftShippingBatchIsoDate(dateText, dayOffset) {
+        const match = String(dateText || "").match(
+          /^(\d{4})-(\d{2})-(\d{2})$/,
+        );
+        if (!match) return "";
+        const date = new Date(
+          Date.UTC(Number(match[1]), Number(match[2]) - 1, Number(match[3])),
+        );
+        date.setUTCDate(date.getUTCDate() + dayOffset);
+        return date.toISOString().slice(0, 10);
+      }
+
+      function buildShippingBatchDisplayLabel(startDate, endDate) {
+        const compact = (value) => {
+          const match = String(value || "").match(/^\d{4}-(\d{2})-(\d{2})$/);
+          return match ? `${Number(match[1])}/${Number(match[2])}` : "";
+        };
+        const start = compact(startDate);
+        const end = compact(endDate);
+        return start && end ? `${start}～${end}` : "";
+      }
+
+      function updateShippingBatchModalDefaults() {
+        const startInput = document.getElementById("shippingBatchStartDate");
+        const endInput = document.getElementById("shippingBatchEndDate");
+        const cutoffInput = document.getElementById("shippingBatchCutoffAt");
+        const labelInput = document.getElementById(
+          "shippingBatchDisplayLabel",
+        );
+        if (
+          cutoffInput &&
+          cutoffInput.dataset.manuallyEdited !== "true" &&
+          endInput?.value
+        ) {
+          cutoffInput.value = `${shiftShippingBatchIsoDate(endInput.value, -1)}T18:00`;
+        }
+        if (
+          labelInput &&
+          labelInput.dataset.manuallyEdited !== "true" &&
+          startInput?.value &&
+          endInput?.value
+        ) {
+          labelInput.value = buildShippingBatchDisplayLabel(
+            startInput.value,
+            endInput.value,
+          );
+        }
+      }
+
+      function openShippingBatchModal(batchId = "") {
+        const batch = adminShippingBatches.find(
+          (item) => String(item.batchId || "") === String(batchId || ""),
+        );
+        const idInput = document.getElementById("shippingBatchId");
+        const labelInput = document.getElementById(
+          "shippingBatchDisplayLabel",
+        );
+        const startInput = document.getElementById("shippingBatchStartDate");
+        const endInput = document.getElementById("shippingBatchEndDate");
+        const cutoffInput = document.getElementById("shippingBatchCutoffAt");
+        const activeInput = document.getElementById("shippingBatchIsActive");
+        const feedback = document.getElementById("shippingBatchModalFeedback");
+        const title = document.getElementById("shippingBatchModalTitle");
+        if (!labelInput || !startInput || !endInput || !cutoffInput) return;
+
+        if (idInput) idInput.value = batch?.batchId || "";
+        labelInput.value = batch?.displayLabel || "";
+        startInput.value = batch?.shippingStartDate || "";
+        endInput.value = batch?.shippingEndDate || "";
+        cutoffInput.value = batch?.cutoffAt || "";
+        if (activeInput) activeInput.checked = batch ? batch.isActive === true : true;
+        labelInput.dataset.manuallyEdited = batch ? "true" : "false";
+        cutoffInput.dataset.manuallyEdited = batch ? "true" : "false";
+        startInput.oninput = updateShippingBatchModalDefaults;
+        endInput.oninput = updateShippingBatchModalDefaults;
+        labelInput.oninput = () => {
+          labelInput.dataset.manuallyEdited = "true";
+        };
+        cutoffInput.oninput = () => {
+          cutoffInput.dataset.manuallyEdited = "true";
+        };
+        if (feedback) {
+          feedback.className = "product-management-feedback";
+          feedback.innerText = batch?.cutoffAt
+            ? ""
+            : batch
+              ? "此為舊批次，儲存前請補上截止日期與時間。"
+              : "";
+        }
+        if (title) title.innerText = batch ? "編輯希望寄出批次" : "新增希望寄出批次";
+        document.getElementById("shippingBatchModal")?.classList.add("open");
+      }
+
+      function closeShippingBatchModal() {
+        if (adminShippingBatchSubmitting) return;
+        document.getElementById("shippingBatchModal")?.classList.remove("open");
+      }
+
+      function validateShippingBatchDraft(draft) {
+        if (
+          !draft.displayLabel ||
+          !draft.shippingStartDate ||
+          !draft.shippingEndDate ||
+          !draft.cutoffAt
+        ) {
+          return "請完整填寫批次名稱、寄出日期與截止時間。";
+        }
+        if (draft.shippingStartDate > draft.shippingEndDate) {
+          return "寄出開始日不可晚於結束日。";
+        }
+        if (draft.cutoffAt.slice(0, 10) >= draft.shippingEndDate) {
+          return "收單截止日必須早於寄出結束日。";
+        }
+        const overlap = adminShippingBatches.find(
+          (batch) =>
+            batch.batchId !== draft.batchId &&
+            draft.shippingStartDate <= batch.shippingEndDate &&
+            draft.shippingEndDate >= batch.shippingStartDate,
+        );
+        if (overlap) {
+          return `寄出日期與「${overlap.displayLabel}」重疊，請重新選擇。`;
+        }
+        return "";
+      }
+
+      function getShippingBatchSaveErrorMessage(errorCode, payload) {
+        if (errorCode === "SHIPPING_BATCH_RANGE_OVERLAP") {
+          const label = payload?.conflictingBatch?.displayLabel || "既有批次";
+          return `寄出日期與「${label}」重疊，請重新選擇。`;
+        }
+        if (errorCode === "SHIPPING_BATCH_VALUE_INVALID") {
+          return "批次欄位或截止時間不正確，請重新檢查。";
+        }
+        if (errorCode === "SHIPPING_BATCH_UPDATE_BUSY") {
+          return "目前有其他批次操作正在進行，請稍後再試。";
+        }
+        if (errorCode === "ADMIN_SESSION_REQUIRED") {
+          return "登入已過期，請重新登入 LINE。";
+        }
+        return "批次儲存失敗，請重新整理後再試。";
+      }
+
+      async function saveShippingBatchModal() {
+        if (adminShippingBatchSubmitting) return;
+        const feedback = document.getElementById("shippingBatchModalFeedback");
+        const saveButton = document.getElementById("shippingBatchSaveButton");
+        const draft = {
+          batchId: String(document.getElementById("shippingBatchId")?.value || "").trim(),
+          displayLabel: String(document.getElementById("shippingBatchDisplayLabel")?.value || "").trim(),
+          shippingStartDate: String(document.getElementById("shippingBatchStartDate")?.value || "").trim(),
+          shippingEndDate: String(document.getElementById("shippingBatchEndDate")?.value || "").trim(),
+          cutoffAt: String(document.getElementById("shippingBatchCutoffAt")?.value || "").trim(),
+          isActive: document.getElementById("shippingBatchIsActive")?.checked === true,
+        };
+        const validationMessage = validateShippingBatchDraft(draft);
+        if (validationMessage) {
+          if (feedback) {
+            feedback.className = "product-management-feedback error";
+            feedback.innerText = validationMessage;
+          }
+          return;
+        }
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) {
+          if (feedback) feedback.innerText = "登入已過期，請重新登入 LINE。";
+          return;
+        }
+
+        adminShippingBatchSubmitting = true;
+        if (saveButton) saveButton.disabled = true;
+        if (feedback) {
+          feedback.className = "product-management-feedback";
+          feedback.innerText = "儲存批次中...";
+        }
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminUpsertShippingBatch",
+                adminSessionToken,
+                ...draft,
+              }),
+            },
+            ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            payload?.action !== "adminUpsertShippingBatch" ||
+            !Array.isArray(payload.batches)
+          ) {
+            const errorCode = String(payload?.error || "");
+            const error = new Error(errorCode || "SHIPPING_BATCH_UPDATE_FAILED");
+            error.payload = payload;
+            throw error;
+          }
+          adminShippingBatches = payload.batches.slice();
+          adminShippingBatchesLoaded = true;
+          document.getElementById("shippingBatchModal")?.classList.remove("open");
+          setShippingBatchManagementFeedback("已儲存寄出批次。", "success");
+          renderShippingBatchManagement();
+        } catch (error) {
+          console.error("儲存希望寄出批次失敗", error);
+          if (feedback) {
+            feedback.className = "product-management-feedback error";
+            feedback.innerText = getShippingBatchSaveErrorMessage(
+              error.message,
+              error.payload,
+            );
+          }
+        } finally {
+          adminShippingBatchSubmitting = false;
+          if (saveButton) saveButton.disabled = false;
+        }
+      }
+
+      async function closeAdminShippingBatch(batchId) {
+        const batch = adminShippingBatches.find(
+          (item) => item.batchId === batchId,
+        );
+        if (!batch || adminShippingBatchSubmitting) return;
+        if (
+          !window.confirm(
+            `立即關閉「${batch.displayLabel}」？\n\n關閉後只會停止接受新訂單，既有 ${Number(batch.activeOrderCount || 0)} 筆有效訂單不會變更。`,
+          )
+        ) {
+          return;
+        }
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        adminShippingBatchSubmitting = true;
+        setShippingBatchManagementFeedback("正在關閉批次...");
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminCloseShippingBatch",
+                adminSessionToken,
+                batchId,
+              }),
+            },
+            ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            payload?.action !== "adminCloseShippingBatch" ||
+            !Array.isArray(payload.batches)
+          ) {
+            throw new Error(payload?.error || "SHIPPING_BATCH_UPDATE_FAILED");
+          }
+          adminShippingBatches = payload.batches.slice();
+          setShippingBatchManagementFeedback(
+            `已關閉「${batch.displayLabel}」，既有訂單不受影響。`,
+            "success",
+          );
+          renderShippingBatchManagement();
+        } catch (error) {
+          console.error("立即關閉希望寄出批次失敗", error);
+          setShippingBatchManagementFeedback(
+            getShippingBatchSaveErrorMessage(error.message),
+            "error",
+          );
+        } finally {
+          adminShippingBatchSubmitting = false;
         }
       }
 
@@ -5597,6 +6225,7 @@
         if (!list) return;
 
         renderProductBannerSettings();
+        renderShippingBatchManagement();
 
         if (!adminProductCatalog.length) {
           list.innerHTML =
