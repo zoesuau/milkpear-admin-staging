@@ -1312,7 +1312,12 @@
       .customer-search-results {
         display: grid;
         gap: 8px;
+        grid-auto-rows: 172px;
         margin-top: 8px;
+        max-height: 352px;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding-right: 4px;
       }
 
       .customer-result-button {
@@ -1325,6 +1330,8 @@
         display: grid;
         grid-template-columns: 1fr;
         gap: 6px 10px;
+        height: 172px;
+        overflow: hidden;
         padding: 10px 12px;
         text-align: left;
       }
@@ -1353,6 +1360,13 @@
         font-size: 12px;
         font-weight: 700;
         word-break: break-word;
+      }
+
+      .customer-result-address {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
       }
 
       .selected-customer-panel {
@@ -15178,32 +15192,44 @@ ${adminNote}
           return;
         }
         results.innerHTML = customers
-          .map((customer) => {
-            const displayName =
-              customer.buyerName || customer.recipientName || "未命名客戶";
-            const selected =
-              adminSelectedCustomer &&
-              adminSelectedCustomer.customerId === customer.customerId;
-            const phone =
+          .map((customer, customerIndex) => {
+            const recipientName =
+              customer.recipientName || customer.buyerName || "未命名收件人";
+            const recipientPhone =
+              customer.recipientPhone || customer.buyerPhone || "電話未填";
+            const buyerName =
+              customer.buyerName || customer.recipientName || "寄件人未填";
+            const buyerPhone =
               customer.buyerPhone || customer.recipientPhone || "電話未填";
+            const selected = adminSelectedCustomer === customer;
             const address = customer.recipientAddress || "地址未填";
             const lastOrder = customer.lastOrderDate || "尚無日期";
-            const lastUpdated = customer.lastUpdatedAt || "尚無日期";
             const duplicateText =
               Number(customer.duplicateCount || 0) > 1
-                ? `<span class="customer-result-meta">已合併 ${escapeHtml(String(customer.duplicateCount))} 筆舊紀錄</span>`
+                ? `｜已合併 ${escapeHtml(String(customer.duplicateCount))} 筆重複客戶資料`
                 : "";
+            const historyOrderText = Number(customer.historyOrderCount || 0)
+              ? `歷史訂單：${escapeHtml(String(customer.historyOrderCount))} 筆`
+              : "尚無歷史訂單";
+            const matchedRoles = [
+              customer.matchedByRecipient ? "收件人" : "",
+              customer.matchedBySender ? "寄件人" : "",
+            ].filter(Boolean);
+            const matchedText = matchedRoles.length
+              ? `｜符合：${escapeHtml(matchedRoles.join("、"))}`
+              : "";
             return `
               <button
                 type="button"
                 class="customer-result-button${selected ? " is-selected" : ""}"
-                data-customer-id="${escapeHtml(customer.customerId)}"
+                data-customer-index="${customerIndex}"
               >
-                <span class="customer-result-name">${escapeHtml(displayName)}</span>
-                <span class="customer-result-phone">電話：${escapeHtml(phone)}</span>
-                <span class="customer-result-meta">地址：${escapeHtml(address)}</span>
-                <span class="customer-result-meta">最後訂購：${escapeHtml(lastOrder)}｜最後更新：${escapeHtml(lastUpdated)}</span>
-                ${duplicateText}
+                <span class="customer-result-name">收件人：${escapeHtml(recipientName)}</span>
+                <span class="customer-result-phone">收件電話：${escapeHtml(recipientPhone)}</span>
+                <span class="customer-result-meta customer-result-address">收件地址：${escapeHtml(address)}</span>
+                <span class="customer-result-meta">寄件人：${escapeHtml(buyerName)}</span>
+                <span class="customer-result-meta">寄件電話：${escapeHtml(buyerPhone)}</span>
+                <span class="customer-result-meta">${historyOrderText}｜最近訂購：${escapeHtml(lastOrder)}${matchedText}${duplicateText}</span>
               </button>
             `;
           })
@@ -15212,10 +15238,8 @@ ${adminNote}
           .querySelectorAll(".customer-result-button")
           .forEach((button) => {
             button.addEventListener("click", () => {
-              const customerId = button.dataset.customerId || "";
-              const customer = customers.find(
-                (item) => item.customerId === customerId,
-              );
+              const customerIndex = Number(button.dataset.customerIndex);
+              const customer = customers[customerIndex];
               if (customer) selectAdminCustomer(customer);
             });
           });
@@ -15269,7 +15293,7 @@ ${adminNote}
           renderAdminCustomerResults(payload.customers);
           setAdminCustomerSearchStatus(
             payload.customers.length
-              ? `找到 ${payload.customers.length} 位，請選取正確客戶。`
+              ? `找到 ${payload.uniqueRecipientCount ?? payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}，以下全部顯示。`
               : "找不到符合客戶；建立訂單後會新增到客戶主檔。",
           );
         } catch (error) {
@@ -15495,13 +15519,15 @@ ${adminNote}
         if (selectedPanel) {
           selectedPanel.style.display = "block";
           selectedPanel.innerHTML = `
-            已選客戶：${escapeHtml(buyerName || recipientName || "未命名客戶")}
-            <br>電話：${escapeHtml(buyerPhone || recipientPhone || "電話未填")}
-            <br>地址：${escapeHtml(customer.recipientAddress || "地址未填")}
-            <br>最後訂購：${escapeHtml(customer.lastOrderDate || "尚無日期")}｜最後更新：${escapeHtml(customer.lastUpdatedAt || "尚無日期")}
+            已選收件人：${escapeHtml(recipientName || "未命名收件人")}
+            <br>收件電話：${escapeHtml(recipientPhone || "電話未填")}
+            <br>收件地址：${escapeHtml(customer.recipientAddress || "地址未填")}
+            <br>寄件人：${escapeHtml(buyerName || "寄件人未填")}
+            <br>寄件電話：${escapeHtml(buyerPhone || "電話未填")}
+            <br>歷史訂單：${escapeHtml(String(customer.historyOrderCount || 0))} 筆｜最近訂購：${escapeHtml(customer.lastOrderDate || "尚無日期")}
             ${
               Number(customer.duplicateCount || 0) > 1
-                ? `<br>已合併 ${escapeHtml(String(customer.duplicateCount))} 筆舊紀錄`
+                ? `<br>已合併 ${escapeHtml(String(customer.duplicateCount))} 筆重複客戶資料`
                 : ""
             }
             <br>customerId：${escapeHtml(customer.customerId)}
