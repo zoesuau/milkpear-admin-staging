@@ -8815,6 +8815,28 @@
         );
       }
 
+      function adminContentItemsEqual(currentItems, nextItems) {
+        if (
+          !Array.isArray(currentItems) ||
+          !Array.isArray(nextItems) ||
+          currentItems.length !== nextItems.length
+        ) {
+          return false;
+        }
+        return currentItems.every((currentItem, index) => {
+          const nextItem = nextItems[index];
+          return (
+            String(currentItem?.code || "")
+              .trim()
+              .toUpperCase() ===
+              String(nextItem?.code || "")
+                .trim()
+                .toUpperCase() &&
+            Number(currentItem?.qty) === Number(nextItem?.qty)
+          );
+        });
+      }
+
       function buildAdminContentPreviewHtml(order, shippedOnly) {
         if (shippedOnly) {
           const finalAmount = Number(order.finalAmount || 0);
@@ -9255,7 +9277,12 @@
                 "商品至少一列，SKU 不可重複，數量須為正整數。";
               return;
             }
-            payload.items = items;
+            const currentItems = parseAdminEditableItemsSummary(
+              order.itemsSummary,
+            );
+            if (!adminContentItemsEqual(currentItems, items)) {
+              payload.items = items;
+            }
           }
         }
 
