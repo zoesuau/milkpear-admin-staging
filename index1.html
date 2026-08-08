@@ -1174,8 +1174,9 @@
       <div class="gas-test-panel" aria-live="polite">
         <div class="gas-test-title">GAS 連線測試區</div>
         <div class="gas-test-status" id="gasTestStatus">
-          準備讀取 GAS 訂單資料...
+          自動連線已停用；僅能手動連接獨立測試 GAS。
         </div>
+        <button type="button" id="gasTestRunButton">手動執行隔離測試</button>
       </div>
 
       <div class="top-filter-panel">
@@ -1736,7 +1737,9 @@
       // ── 基礎變數 ──
       const sendBtn = document.getElementById("sendBtn");
       const statusMsg = document.getElementById("statusMsg");
-      const GAS_ORDERS_API_URL =
+      // 遺留測試頁不得預設連線正式環境；需要使用時必須填入獨立測試部署。
+      const GAS_ORDERS_API_URL = "PASTE_YOUR_TEST_GAS_WEB_APP_URL_HERE";
+      const FORBIDDEN_PRODUCTION_GAS_ORDERS_API_URL =
         "https://script.google.com/macros/s/AKfycby9r7QgpvOJ7KP_3uVI9eYHkzeJnPVFhP7Z3uQdQBvMogYglPoim79H3HJpjyUAgW57/exec";
 
       const PRODUCT_LIST = [
@@ -2126,8 +2129,14 @@
         try {
           const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
 
-          if (!baseUrl || baseUrl === "PASTE_YOUR_GAS_WEB_APP_URL_HERE") {
-            throw new Error("尚未設定 GAS Web App /exec 網址。");
+          if (
+            !baseUrl ||
+            baseUrl === "PASTE_YOUR_TEST_GAS_WEB_APP_URL_HERE"
+          ) {
+            throw new Error("尚未設定獨立測試 GAS Web App /exec 網址。");
+          }
+          if (baseUrl === FORBIDDEN_PRODUCTION_GAS_ORDERS_API_URL) {
+            throw new Error("此遺留測試頁禁止連線正式 GAS。");
           }
 
           if (gasStatusEl) {
@@ -2138,14 +2147,30 @@
           // 固定只呼叫安全摘要讀取入口。
           const requestUrl = new URL(baseUrl);
           requestUrl.searchParams.set("action", "readOrders");
+          requestUrl.searchParams.set("source", "legacy_admin_read_test_manual");
+          requestUrl.searchParams.set(
+            "requestId",
+            `legacy-test-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+          );
 
           // 避免 GitHub Pages 或瀏覽器拿到舊快取。
           requestUrl.searchParams.set("_", String(Date.now()));
 
-          const response = await fetch(requestUrl.toString(), {
-            method: "GET",
-            cache: "no-store",
-          });
+          const controller = new AbortController();
+          const timeoutTimer = window.setTimeout(
+            () => controller.abort(),
+            15000,
+          );
+          let response;
+          try {
+            response = await fetch(requestUrl.toString(), {
+              method: "GET",
+              cache: "no-store",
+              signal: controller.signal,
+            });
+          } finally {
+            window.clearTimeout(timeoutTimer);
+          }
 
           if (!response.ok) {
             throw new Error(`GAS 回應失敗：HTTP ${response.status}`);
@@ -2219,7 +2244,9 @@
         initShipmentBaseline("orderCard1");
         updateNotifyButton();
         renderProductManagement();
-        fetchOrdersFromGas();
+        document
+          .getElementById("gasTestRunButton")
+          ?.addEventListener("click", fetchOrdersFromGas);
       });
       // ==========================================
       // ✨ 系統一：訂單狀態 badge/class 同步（由系統自動推導）
