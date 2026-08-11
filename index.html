@@ -4033,6 +4033,81 @@
         width: 100%;
       }
 
+      .product-inventory-control {
+        align-items: stretch;
+        display: grid;
+        gap: 8px;
+        grid-template-columns: minmax(0, 1fr) auto;
+      }
+
+      .product-inventory-control input[readonly] {
+        background: #f8fafc;
+        color: #334155;
+        cursor: default;
+        font-weight: 800;
+      }
+
+      .product-inventory-control .product-action-btn {
+        min-width: 82px;
+        white-space: nowrap;
+      }
+
+      .product-inventory-correction {
+        background: transparent;
+        border: 0;
+        color: #64748b;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 800;
+        justify-self: start;
+        padding: 2px 0;
+        text-decoration: underline;
+        text-underline-offset: 3px;
+      }
+
+      .product-inventory-hint {
+        color: #94a3b8;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .inventory-adjustment-description {
+        color: #475569;
+        font-size: 14px;
+        line-height: 1.6;
+        margin: 0 0 18px;
+      }
+
+      .inventory-adjustment-summary {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 12px;
+        display: grid;
+        gap: 8px;
+        margin-top: 14px;
+        padding: 12px;
+      }
+
+      .inventory-adjustment-summary-row {
+        color: #64748b;
+        display: flex;
+        font-size: 13px;
+        font-weight: 800;
+        gap: 12px;
+        justify-content: space-between;
+      }
+
+      .inventory-adjustment-summary-row.total {
+        border-top: 1px solid #e2e8f0;
+        color: #15803d;
+        font-size: 16px;
+        padding-top: 8px;
+      }
+
+      .inventory-adjustment-summary-row.shortage {
+        color: #be123c;
+      }
+
       .product-management-feedback {
         color: #64748b;
         font-size: 13px;
@@ -5377,6 +5452,65 @@
       </div>
     </div>
 
+    <div class="modal-overlay" id="productInventoryAdjustmentModal">
+      <div class="modal-container" style="max-width: 440px">
+        <div class="modal-header">
+          <h3 id="productInventoryAdjustmentTitle">調整庫存</h3>
+          <button
+            type="button"
+            class="modal-close-btn"
+            onclick="closeProductInventoryAdjustmentModal()"
+          >
+            ×
+          </button>
+        </div>
+        <div class="modal-body">
+          <p
+            class="inventory-adjustment-description"
+            id="productInventoryAdjustmentDescription"
+          ></p>
+          <div class="form-group">
+            <label id="productInventoryAdjustmentQuantityLabel" for="productInventoryAdjustmentQuantity">本次新增庫存</label>
+            <input
+              class="form-control"
+              id="productInventoryAdjustmentQuantity"
+              type="number"
+              min="0"
+              step="1"
+              inputmode="numeric"
+              oninput="renderProductInventoryAdjustmentPreview()"
+            />
+          </div>
+          <div
+            class="inventory-adjustment-summary"
+            id="productInventoryAdjustmentSummary"
+          ></div>
+          <div
+            class="product-management-feedback"
+            id="productInventoryAdjustmentFeedback"
+            aria-live="polite"
+          ></div>
+        </div>
+        <div class="modal-footer">
+          <button
+            type="button"
+            class="btn btn-modal-cancel"
+            onclick="closeProductInventoryAdjustmentModal()"
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            class="btn btn-modal-submit"
+            id="productInventoryAdjustmentSubmit"
+            onclick="submitProductInventoryAdjustment()"
+          >
+            確認
+          </button>
+        </div>
+      </div>
+    </div>
+
     <div class="modal-overlay" id="shippingBatchModal">
       <div class="modal-container" style="max-width: 620px">
         <div class="modal-header">
@@ -5873,6 +6007,8 @@
       let adminShippingBatches = [];
       let adminShippingBatchesLoaded = false;
       let adminShippingBatchSubmitting = false;
+      let adminInventoryAdjustmentContext = null;
+      let adminInventoryAdjustmentSubmitting = false;
       let adminProductsReady = false;
       let latestAdminOrders = [];
       let adminOrderReadMeta = {
@@ -6891,7 +7027,12 @@
           </div>
           <div class="product-field">
             <label>總庫存</label>
-            <input data-product-field="stock" type="number" min="0" step="1" placeholder="空白＝不限量" value="${Number.isInteger(product.stock) ? escapeHtml(product.stock) : ""}">
+            <div class="product-inventory-control">
+              <input data-product-field="stock" type="number" min="0" step="1" placeholder="尚未設定" value="${Number.isInteger(product.stock) ? escapeHtml(product.stock) : ""}" readonly aria-readonly="true">
+              <button type="button" class="product-action-btn secondary" onclick="openProductInventoryAdjustmentFromCard(this)" ${product.isNew ? "disabled" : ""}>${product.isNew ? "儲存後設定" : Number.isInteger(product.stock) ? "＋補貨" : "設定首批庫存"}</button>
+            </div>
+            ${!product.isNew && Number.isInteger(product.stock) ? '<button type="button" class="product-inventory-correction" onclick="openProductInventoryAdjustmentFromCard(this, \'reconcile\')">盤點修正</button>' : ""}
+            <span class="product-inventory-hint">補貨與商品資料分開儲存，避免覆蓋目前庫存。</span>
           </div>
           <div class="product-field">
             <label>保留給後台（盒）</label>
@@ -7172,6 +7313,310 @@
         document.getElementById("productAddModal")?.classList.remove("open");
       }
 
+      function createAdminInventoryRequestKey() {
+        if (globalThis.crypto?.randomUUID) {
+          return `inventory_${globalThis.crypto.randomUUID().replace(/-/g, "")}`;
+        }
+        return `inventory_${Date.now()}_${Math.random().toString(36).slice(2, 14)}`;
+      }
+
+      function setProductInventoryAdjustmentFeedback(message, type = "") {
+        const feedback = document.getElementById(
+          "productInventoryAdjustmentFeedback",
+        );
+        if (!feedback) return;
+        feedback.className = `product-management-feedback ${type}`.trim();
+        feedback.innerText = message || "";
+      }
+
+      function openProductInventoryAdjustmentFromCard(button, requestedMode = "") {
+        const productId = String(
+          button?.closest(".product-admin-card")?.dataset.productId || "",
+        ).trim();
+        if (!productId) return;
+        openProductInventoryAdjustmentModal(productId, requestedMode);
+      }
+
+      async function openProductInventoryAdjustmentModal(
+        productId,
+        requestedMode = "",
+      ) {
+        const product = adminProductCatalog.find(
+          (item) => String(item.id || "").trim() === String(productId || "").trim(),
+        );
+        if (!product) {
+          setProductManagementFeedback("找不到商品，請重新整理後再試。", "error");
+          return;
+        }
+        const modal = document.getElementById("productInventoryAdjustmentModal");
+        const input = document.getElementById("productInventoryAdjustmentQuantity");
+        const submit = document.getElementById("productInventoryAdjustmentSubmit");
+        const mode = requestedMode === "reconcile"
+          ? "reconcile"
+          : Number.isInteger(product.stock)
+            ? "restock"
+            : "initialize";
+        adminInventoryAdjustmentContext = {
+          productId: product.id,
+          productName: getAdminProductDisplayName(product),
+          mode,
+          stock: Number.isInteger(product.stock) ? product.stock : null,
+          pendingOrderQuantity: 0,
+          requestKey: createAdminInventoryRequestKey(),
+          ready: false,
+        };
+        if (input) {
+          input.value = mode === "reconcile" && Number.isInteger(product.stock)
+            ? String(product.stock)
+            : "";
+          input.disabled = true;
+          input.min = "0";
+        }
+        if (submit) submit.disabled = true;
+        modal?.classList.add("open");
+        setProductInventoryAdjustmentFeedback("正在確認最新庫存與既有訂單…");
+        renderProductInventoryAdjustmentPreview();
+
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminReadProductInventoryContext",
+              adminSessionToken,
+              catalogVersion: adminProductCatalogVersion,
+              productId: product.id,
+            }),
+          });
+          const result = await response.json();
+          if (
+            !response.ok ||
+            result?.ok !== true ||
+            result?.action !== "adminReadProductInventoryContext"
+          ) {
+            throw new Error(result?.error || "INVENTORY_CONTEXT_READ_FAILED");
+          }
+          if (
+            !adminInventoryAdjustmentContext ||
+            adminInventoryAdjustmentContext.productId !== product.id
+          ) {
+            return;
+          }
+          const serverStock = Number.isInteger(result.stock) ? result.stock : null;
+          adminInventoryAdjustmentContext.stock = serverStock;
+          adminInventoryAdjustmentContext.pendingOrderQuantity = Math.max(
+            0,
+            Number(result.pendingOrderQuantity || 0),
+          );
+          if (mode === "reconcile" && serverStock === null) {
+            throw new Error("INVENTORY_NOT_INITIALIZED");
+          }
+          if (mode !== "reconcile") {
+            adminInventoryAdjustmentContext.mode = Number.isInteger(serverStock)
+              ? "restock"
+              : "initialize";
+          }
+          adminInventoryAdjustmentContext.ready = true;
+          if (input) {
+            input.disabled = false;
+            input.value = adminInventoryAdjustmentContext.mode === "reconcile"
+              ? String(serverStock)
+              : "";
+            input.focus();
+          }
+          if (submit) submit.disabled = false;
+          setProductInventoryAdjustmentFeedback("");
+          renderProductInventoryAdjustmentPreview();
+        } catch (error) {
+          console.error("讀取商品庫存內容失敗", error);
+          setProductInventoryAdjustmentFeedback(
+            error.message === "PRODUCT_CATALOG_STALE"
+              ? "庫存已更新，請關閉後重新整理商品。"
+              : "無法確認最新庫存，請稍後再試。",
+            "error",
+          );
+        }
+      }
+
+      function renderProductInventoryAdjustmentPreview() {
+        const context = adminInventoryAdjustmentContext;
+        const title = document.getElementById("productInventoryAdjustmentTitle");
+        const description = document.getElementById(
+          "productInventoryAdjustmentDescription",
+        );
+        const label = document.getElementById(
+          "productInventoryAdjustmentQuantityLabel",
+        );
+        const input = document.getElementById("productInventoryAdjustmentQuantity");
+        const summary = document.getElementById(
+          "productInventoryAdjustmentSummary",
+        );
+        const submit = document.getElementById("productInventoryAdjustmentSubmit");
+        if (!context || !title || !description || !label || !summary) return;
+
+        const mode = context.mode;
+        title.innerText = mode === "initialize"
+          ? "設定首批庫存"
+          : mode === "reconcile"
+            ? "盤點修正"
+            : "新增庫存";
+        description.innerText = mode === "initialize"
+          ? `${context.productName}｜輸入現場確認的總數，系統會扣除尚未出貨的既有訂單。`
+          : mode === "reconcile"
+            ? `${context.productName}｜只有盤點數字不一致或發生損耗時才使用。`
+            : `${context.productName}｜輸入這一批新增加的盒數。`;
+        label.innerText = mode === "initialize"
+          ? "現場實際總數"
+          : mode === "reconcile"
+            ? "盤點後總庫存"
+            : "本次新增庫存";
+        if (input) input.min = mode === "restock" ? "1" : "0";
+        if (submit) {
+          submit.innerText = mode === "initialize"
+            ? "確認設定"
+            : mode === "reconcile"
+              ? "確認修正"
+              : "確認補貨";
+        }
+
+        const quantityText = String(input?.value || "").trim();
+        const quantity = /^\d+$/.test(quantityText) ? Number(quantityText) : null;
+        if (!context.ready || quantity === null) {
+          summary.innerHTML = context.ready
+            ? '<div class="inventory-adjustment-summary-row"><span>請輸入數量</span><strong>—</strong></div>'
+            : '<div class="inventory-adjustment-summary-row"><span>讀取中</span><strong>—</strong></div>';
+          return;
+        }
+
+        if (mode === "initialize") {
+          const pending = context.pendingOrderQuantity;
+          const shortage = Math.max(0, pending - quantity);
+          const after = Math.max(0, quantity - pending);
+          summary.innerHTML = `
+            <div class="inventory-adjustment-summary-row"><span>現場實際總數</span><strong>${escapeHtml(quantity)} 盒</strong></div>
+            <div class="inventory-adjustment-summary-row"><span>既有待出貨訂單</span><strong>− ${escapeHtml(pending)} 盒</strong></div>
+            ${shortage ? `<div class="inventory-adjustment-summary-row shortage"><span>尚缺</span><strong>${escapeHtml(shortage)} 盒</strong></div>` : ""}
+            <div class="inventory-adjustment-summary-row total"><span>設定後可售庫存</span><strong>${escapeHtml(after)} 盒</strong></div>
+          `;
+          return;
+        }
+
+        const before = Number(context.stock || 0);
+        const after = mode === "restock" ? before + quantity : quantity;
+        summary.innerHTML = `
+          <div class="inventory-adjustment-summary-row"><span>目前庫存</span><strong>${escapeHtml(before)} 盒</strong></div>
+          ${mode === "restock" ? `<div class="inventory-adjustment-summary-row"><span>本次新增</span><strong>＋ ${escapeHtml(quantity)} 盒</strong></div>` : ""}
+          <div class="inventory-adjustment-summary-row total"><span>${mode === "reconcile" ? "修正後庫存" : "補貨後庫存"}</span><strong>${escapeHtml(after)} 盒</strong></div>
+        `;
+      }
+
+      function closeProductInventoryAdjustmentModal() {
+        if (adminInventoryAdjustmentSubmitting) return;
+        document
+          .getElementById("productInventoryAdjustmentModal")
+          ?.classList.remove("open");
+        adminInventoryAdjustmentContext = null;
+      }
+
+      async function submitProductInventoryAdjustment() {
+        if (adminInventoryAdjustmentSubmitting) return;
+        const context = adminInventoryAdjustmentContext;
+        const input = document.getElementById("productInventoryAdjustmentQuantity");
+        const submit = document.getElementById("productInventoryAdjustmentSubmit");
+        const quantityText = String(input?.value || "").trim();
+        const quantity = /^\d+$/.test(quantityText) ? Number(quantityText) : null;
+        if (!context?.ready || !Number.isSafeInteger(quantity)) {
+          setProductInventoryAdjustmentFeedback("請輸入0以上的整數。", "error");
+          return;
+        }
+        if (context.mode === "restock" && quantity < 1) {
+          setProductInventoryAdjustmentFeedback("補貨數量至少為1盒。", "error");
+          return;
+        }
+        if (
+          context.mode === "initialize" &&
+          quantity < context.pendingOrderQuantity
+        ) {
+          setProductInventoryAdjustmentFeedback(
+            `現場數量不足，既有待出貨訂單尚缺 ${context.pendingOrderQuantity - quantity} 盒。`,
+            "error",
+          );
+          return;
+        }
+
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        adminInventoryAdjustmentSubmitting = true;
+        if (input) input.disabled = true;
+        if (submit) submit.disabled = true;
+        setProductInventoryAdjustmentFeedback("庫存更新中…");
+        try {
+          const response = await fetch(GAS_ORDERS_API_URL, {
+            method: "POST",
+            headers: { "Content-Type": "text/plain;charset=utf-8" },
+            body: JSON.stringify({
+              action: "adminAdjustProductInventory",
+              adminSessionToken,
+              catalogVersion: adminProductCatalogVersion,
+              requestKey: context.requestKey,
+              productId: context.productId,
+              mode: context.mode,
+              quantity,
+              note: "",
+            }),
+          });
+          const result = await response.json();
+          if (
+            !response.ok ||
+            result?.ok !== true ||
+            result?.action !== "adminAdjustProductInventory" ||
+            !Array.isArray(result.products)
+          ) {
+            const failure = new Error(result?.error || "INVENTORY_UPDATE_FAILED");
+            failure.details = result;
+            throw failure;
+          }
+          adminProductCatalog = result.products.slice();
+          adminProductCatalogVersion = String(result.catalogVersion || "");
+          setAdminProductCatalogState(true, "✅ 管理員商品目錄讀取成功");
+          document
+            .getElementById("productInventoryAdjustmentModal")
+            ?.classList.remove("open");
+          adminInventoryAdjustmentContext = null;
+          renderProductManagement();
+          resetModalProductRows();
+          updateNewOrderAmountPreview();
+          const adjustment = result.adjustment || {};
+          const successText = adjustment.mode === "initialize"
+            ? `✅ 首批庫存已設定，可售庫存 ${adjustment.afterStock} 盒`
+            : adjustment.mode === "reconcile"
+              ? `✅ 盤點完成，庫存修正為 ${adjustment.afterStock} 盒`
+              : `✅ 已新增 ${adjustment.enteredQuantity} 盒，現在庫存 ${adjustment.afterStock} 盒`;
+          setProductManagementFeedback(successText, "success");
+        } catch (error) {
+          console.error("商品庫存更新失敗", error);
+          const details = error.details || {};
+          const message = error.message === "PRODUCT_CATALOG_STALE"
+            ? "庫存已被其他訂單更新，請重新整理後再試。"
+            : error.message === "INITIAL_STOCK_INSUFFICIENT"
+              ? `現場數量不足，既有待出貨訂單尚缺 ${Number(details.shortage || 0)} 盒。`
+              : error.message === "INVENTORY_UPDATE_BUSY"
+                ? "目前有訂單或庫存正在更新，請稍後再試。"
+                : error.message === "PENDING_ORDER_ITEMS_UNREADABLE"
+                  ? "部分舊訂單商品格式無法辨識，為避免少扣庫存，本次未更新。"
+                  : "庫存更新失敗，請重新整理後再試。";
+          setProductInventoryAdjustmentFeedback(message, "error");
+          if (input) input.disabled = false;
+          if (submit) submit.disabled = false;
+        } finally {
+          adminInventoryAdjustmentSubmitting = false;
+        }
+      }
+
       async function saveProductAddModal() {
         const modal = document.getElementById("productAddModal");
         const fields = document.getElementById("productAddModalFields");
@@ -7360,6 +7805,8 @@
           setProductManagementFeedback(
             error.message === "PRODUCT_CATALOG_STALE"
               ? "庫存已被訂單更新，為避免覆蓋最新數量，請重新整理商品後再修改。"
+              : error.message === "PRODUCT_STOCK_SEPARATE_ACTION_REQUIRED"
+                ? "庫存請使用商品卡內的「設定首批庫存／＋補貨／盤點修正」。"
               : error.message === "PRODUCT_MANAGEMENT_UPDATE_BUSY"
                 ? "目前有訂單或庫存正在更新，請稍後再試。"
                 : "儲存失敗，請確認欄位格式或重新整理後再試。",
