@@ -3479,12 +3479,12 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
-      .admin-card-list-recipient-name {
+      .admin-card-list-summary {
         cursor: pointer;
         touch-action: manipulation;
         user-select: none;
       }
-      .admin-card-list-recipient-name:focus-visible {
+      .admin-card-list-summary:focus-visible {
         outline: 2px solid #4f7f63;
         outline-offset: 2px;
         border-radius: 3px;
@@ -7705,8 +7705,27 @@
         return hasExpandedCard;
       }
 
-      function expandAdminCardFromListRecipient(card, options = {}) {
+      function rememberAdminCardListPosition(card) {
+        const listScroll = document.getElementById("adminCardListScroll");
+        if (!card || !listScroll) return;
+        card.dataset.listScrollLeft = String(listScroll.scrollLeft || 0);
+      }
+
+      function restoreAdminCardListPosition(card) {
+        if (!card || adminCardViewMode !== "list") return;
+        const listScroll = document.getElementById("adminCardListScroll");
+        const savedScrollLeft = Number(card.dataset.listScrollLeft || 0);
+        delete card.dataset.listScrollLeft;
+        window.requestAnimationFrame(() => {
+          if (listScroll) listScroll.scrollLeft = savedScrollLeft;
+          const row = card.querySelector(":scope > .admin-card-list-summary");
+          (row || card).scrollIntoView({ behavior: "smooth", block: "center" });
+        });
+      }
+
+      function expandAdminCardFromListRow(card, options = {}) {
         if (!card || adminCardViewMode !== "list") return false;
+        rememberAdminCardListPosition(card);
         document
           .querySelectorAll("#cards-container > .card.is-view-expanded")
           .forEach((expandedCard) => {
@@ -7726,21 +7745,34 @@
         return true;
       }
 
-      function handleAdminListRecipientNameClick(event, card) {
-        if (!card || adminCardViewMode !== "list") return false;
+      function handleAdminListRowClick(event, card) {
+        if (
+          !card ||
+          adminCardViewMode !== "list" ||
+          card.classList.contains("is-view-expanded")
+        ) {
+          return false;
+        }
+        if (
+          event?.target?.closest?.(
+            "button, input, select, textarea, a, summary, details, [contenteditable='true']",
+          )
+        ) {
+          return false;
+        }
         const now = Date.now();
-        const previousTapAt = Number(card.dataset.recipientNameTapAt || 0);
-        card.dataset.recipientNameTapAt = String(now);
+        const previousTapAt = Number(card.dataset.listRowTapAt || 0);
+        card.dataset.listRowTapAt = String(now);
         if (!previousTapAt || now - previousTapAt > 500) return false;
-        delete card.dataset.recipientNameTapAt;
+        delete card.dataset.listRowTapAt;
         event?.preventDefault();
-        return expandAdminCardFromListRecipient(card);
+        return expandAdminCardFromListRow(card);
       }
 
-      function handleAdminListRecipientNameKeydown(event, card) {
+      function handleAdminListRowKeydown(event, card) {
         if (!event || !["Enter", " "].includes(event.key)) return false;
         event.preventDefault();
-        return expandAdminCardFromListRecipient(card);
+        return expandAdminCardFromListRow(card);
       }
 
       function syncAdminCardViewControls() {
@@ -7836,9 +7868,16 @@
           }
           return false;
         }
+        const wasExpanded = card.classList.contains("is-view-expanded");
+        if (!wasExpanded && adminCardViewMode === "list") {
+          rememberAdminCardListPosition(card);
+        }
         card.classList.toggle("is-view-expanded");
         syncAdminCardExpandButton(card);
         syncAdminCardListExpandedState();
+        if (wasExpanded && adminCardViewMode === "list") {
+          restoreAdminCardListPosition(card);
+        }
         return true;
       }
 
@@ -8987,6 +9026,7 @@
         return `
           <div
             class="card ${escapeHtml(statusMeta.cardClass)}${isAdminCreatedOrder ? " admin-created-order" : ""}${shouldShowOrderChangeAlert ? " order-change-pending" : ""}"
+            onclick="handleAdminListRowClick(event, this)"
             data-status="${escapeHtml(orderStatus)}"
             data-readonly="true"
             data-order-no="${escapeHtml(orderNo)}"
@@ -9034,9 +9074,9 @@
               </div>
             </div>
 
-            <div class="admin-card-list-summary" aria-label="訂單清單摘要">
+            <div class="admin-card-list-summary" role="button" tabindex="0" title="連按兩下展開完整卡片" aria-label="展開 ${escapeHtml(recipientName || "未提供")} 的完整卡片" onkeydown="handleAdminListRowKeydown(event, this.closest('.card'))">
               <div class="admin-card-list-recipient">
-                <strong class="admin-card-list-recipient-name" role="button" tabindex="0" title="連按兩下展開完整卡片" aria-label="展開 ${escapeHtml(recipientName || "未提供")} 的完整卡片" onclick="handleAdminListRecipientNameClick(event, this.closest('.card'))" onkeydown="handleAdminListRecipientNameKeydown(event, this.closest('.card'))">${escapeHtml(recipientName || "未提供")}</strong>
+                <strong>${escapeHtml(recipientName || "未提供")}</strong>
                 <span>${escapeHtml(recipientPhone || "未提供")}</span>
               </div>
               <div class="admin-card-list-date">
