@@ -3479,6 +3479,16 @@
         text-overflow: ellipsis;
         white-space: nowrap;
       }
+      .admin-card-list-recipient-name {
+        cursor: pointer;
+        touch-action: manipulation;
+        user-select: none;
+      }
+      .admin-card-list-recipient-name:focus-visible {
+        outline: 2px solid #4f7f63;
+        outline-offset: 2px;
+        border-radius: 3px;
+      }
       .admin-card-list-recipient span {
         flex-shrink: 0;
         color: #475569;
@@ -3552,8 +3562,7 @@
       .admin-card-list-header-action {
         text-align: right;
       }
-      .admin-card-list-header > span:nth-child(2),
-      .admin-card-list-header > span:nth-child(3) {
+      .admin-card-list-header > span:nth-child(2) {
         position: sticky;
         z-index: 7;
         align-self: stretch;
@@ -3564,19 +3573,11 @@
       .admin-card-list-header > span:nth-child(2) {
         left: 0;
       }
-      .admin-card-list-header > span:nth-child(3) {
-        left: 153px;
-        box-shadow: 6px 0 8px rgba(71, 85, 105, 0.08);
-      }
       .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-date {
         grid-column: 3;
-        position: sticky;
-        left: 153px;
-        z-index: 4;
         align-self: stretch;
         display: grid;
         align-content: center;
-        background: var(--admin-card-list-bg, #ffffff);
       }
       .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-date strong {
         font-size: 12px;
@@ -3622,6 +3623,29 @@
         .admin-card-view-button {
           width: 34px;
           height: 34px;
+        }
+        .admin-card-list-scroll.is-list-mode.has-expanded-card {
+          width: 100%;
+          max-width: 500px;
+          overflow-x: hidden;
+          scrollbar-gutter: auto;
+        }
+        .admin-card-list-scroll.is-list-mode.has-expanded-card .admin-card-list-header {
+          display: none !important;
+        }
+        .admin-card-list-scroll.is-list-mode.has-expanded-card .cards-container.admin-card-view-list {
+          width: 100%;
+          min-width: 0;
+          max-width: 500px;
+          margin: 0 auto;
+        }
+        .admin-card-list-scroll.is-list-mode.has-expanded-card .card:not(.is-view-expanded) {
+          display: none;
+        }
+        .admin-card-list-scroll.is-list-mode.has-expanded-card .card.is-view-expanded {
+          width: 100%;
+          max-width: 500px;
+          margin: 0 auto 16px;
         }
       }
 
@@ -7664,6 +7688,61 @@
         }
       }
 
+      function syncAdminCardListExpandedState(options = {}) {
+        const listScroll = document.getElementById("adminCardListScroll");
+        if (!listScroll) return false;
+        const expandedCard =
+          adminCardViewMode === "list"
+            ? document.querySelector(
+                "#cards-container > .card.is-view-expanded",
+              )
+            : null;
+        const hasExpandedCard = !!expandedCard;
+        listScroll.classList.toggle("has-expanded-card", hasExpandedCard);
+        if (hasExpandedCard && options.resetHorizontal !== false) {
+          listScroll.scrollLeft = 0;
+        }
+        return hasExpandedCard;
+      }
+
+      function expandAdminCardFromListRecipient(card, options = {}) {
+        if (!card || adminCardViewMode !== "list") return false;
+        document
+          .querySelectorAll("#cards-container > .card.is-view-expanded")
+          .forEach((expandedCard) => {
+            if (expandedCard !== card) {
+              expandedCard.classList.remove("is-view-expanded");
+              syncAdminCardExpandButton(expandedCard);
+            }
+          });
+        card.classList.add("is-view-expanded");
+        syncAdminCardExpandButton(card);
+        syncAdminCardListExpandedState();
+        if (options.scroll !== false && window.matchMedia("(max-width: 767px)").matches) {
+          window.requestAnimationFrame(() => {
+            card.scrollIntoView({ behavior: "smooth", block: "start" });
+          });
+        }
+        return true;
+      }
+
+      function handleAdminListRecipientNameClick(event, card) {
+        if (!card || adminCardViewMode !== "list") return false;
+        const now = Date.now();
+        const previousTapAt = Number(card.dataset.recipientNameTapAt || 0);
+        card.dataset.recipientNameTapAt = String(now);
+        if (!previousTapAt || now - previousTapAt > 500) return false;
+        delete card.dataset.recipientNameTapAt;
+        event?.preventDefault();
+        return expandAdminCardFromListRecipient(card);
+      }
+
+      function handleAdminListRecipientNameKeydown(event, card) {
+        if (!event || !["Enter", " "].includes(event.key)) return false;
+        event.preventDefault();
+        return expandAdminCardFromListRecipient(card);
+      }
+
       function syncAdminCardViewControls() {
         const container = document.getElementById("cards-container");
         const listHeader = document.getElementById("adminCardListHeader");
@@ -7693,6 +7772,7 @@
             adminCardViewMode === "list",
           );
         }
+        syncAdminCardListExpandedState({ resetHorizontal: false });
         document
           .querySelectorAll("[data-admin-card-view]")
           .forEach((button) => {
@@ -7758,6 +7838,7 @@
         }
         card.classList.toggle("is-view-expanded");
         syncAdminCardExpandButton(card);
+        syncAdminCardListExpandedState();
         return true;
       }
 
@@ -7765,6 +7846,7 @@
         if (!card || adminCardViewMode === "full") return;
         card.classList.add("is-view-expanded");
         syncAdminCardExpandButton(card);
+        syncAdminCardListExpandedState();
       }
 
       function setOperationText(card, selector, value) {
@@ -8954,7 +9036,7 @@
 
             <div class="admin-card-list-summary" aria-label="訂單清單摘要">
               <div class="admin-card-list-recipient">
-                <strong>${escapeHtml(recipientName || "未提供")}</strong>
+                <strong class="admin-card-list-recipient-name" role="button" tabindex="0" title="連按兩下展開完整卡片" aria-label="展開 ${escapeHtml(recipientName || "未提供")} 的完整卡片" onclick="handleAdminListRecipientNameClick(event, this.closest('.card'))" onkeydown="handleAdminListRecipientNameKeydown(event, this.closest('.card'))">${escapeHtml(recipientName || "未提供")}</strong>
                 <span>${escapeHtml(recipientPhone || "未提供")}</span>
               </div>
               <div class="admin-card-list-date">
