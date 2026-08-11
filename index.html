@@ -7,6 +7,11 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>出貨後台</title>
+    <link
+      rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css"
+      crossorigin="anonymous"
+    />
 
     <style>
       * {
@@ -1469,18 +1474,22 @@
 
       /* 修正顏色定義 */
       .status-pending {
+        --admin-card-list-bg: #fff1f2;
         background: #fff1f2;
         border: 1px solid #fecaca;
       } /* 粉紅 */
       .status-confirmed {
+        --admin-card-list-bg: #fef9c3;
         background: #fef9c3;
         border: 1px solid #fef08a;
       } /* 黃色 */
       .status-shipped {
+        --admin-card-list-bg: #dcfce7;
         background: #dcfce7;
         border: 1px solid #bbf7d0;
       } /* 綠色 */
       .status-cancelled {
+        --admin-card-list-bg: #f1f5f9;
         background: #f1f5f9;
         border: 1px solid #e2e8f0;
         opacity: 0.7;
@@ -3232,34 +3241,47 @@
       /* 訂單卡片顯示方式：完整、精簡、清單 */
       .admin-card-view-toolbar {
         display: flex;
+        position: sticky;
+        right: 0;
+        z-index: 10;
         align-items: center;
         justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin: -2px 0 12px;
+        gap: 6px;
+        width: fit-content;
+        max-width: none;
+        margin: 10px 12px 6px auto;
+        padding: 0;
+        border: 0;
+        background: transparent;
       }
-      .admin-card-view-label,
       .admin-card-view-status {
         color: #64748b;
         font-size: 12px;
         font-weight: 800;
       }
+      .admin-card-view-status:empty,
+      .admin-card-view-label {
+        display: none;
+      }
       .admin-card-view-switch {
         display: inline-flex;
         gap: 4px;
         padding: 4px;
-        border: 1px solid #dbe4df;
+        border: 0;
         border-radius: 12px;
         background: #f8faf9;
       }
       .admin-card-view-button {
-        min-height: 34px;
-        padding: 0 11px;
-        border: 0;
+        display: inline-grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        padding: 0;
+        border: 1px solid #dbe4df;
         border-radius: 8px;
-        background: transparent;
+        background: #ffffff;
         color: #526375;
-        font-size: 13px;
+        font-size: 16px;
         font-weight: 900;
         cursor: pointer;
       }
@@ -3272,8 +3294,40 @@
         color: #ffffff;
         box-shadow: 0 2px 6px rgba(79, 127, 99, 0.2);
       }
+      .admin-card-view-button .admin-card-view-button-label {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
       .admin-card-view-status.is-warning {
         color: #b45309;
+      }
+      .admin-card-list-header {
+        display: none;
+      }
+      .admin-card-list-header[hidden] {
+        display: none !important;
+      }
+      .admin-card-list-summary {
+        display: none;
+      }
+      .admin-card-list-scroll {
+        display: contents;
+      }
+      .admin-card-list-scroll.is-list-mode {
+        display: block;
+        width: calc(100% - 24px);
+        max-width: 1140px;
+        margin: 0 auto;
+        overflow-x: auto;
+        overscroll-behavior-inline: contain;
+        scrollbar-gutter: stable;
+        -webkit-overflow-scrolling: touch;
       }
       .admin-card-view-expand {
         display: none;
@@ -3325,112 +3379,255 @@
         font-size: 16px;
         line-height: 1.45;
       }
-      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) > .admin-content-readonly > details,
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-readonly > details {
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) > .admin-content-readonly > details {
         display: none;
       }
 
       .cards-container.admin-card-view-list {
+        width: 100%;
+        min-width: 996px;
+        max-width: none;
+        margin: 0;
         grid-template-columns: minmax(0, 1fr);
         gap: 8px;
       }
       .cards-container.admin-card-view-list .card:not(.is-view-expanded) {
+        display: grid;
+        grid-template-columns: 34px 145px 100px 108px minmax(239px, 1fr) 120px 92px 78px;
+        align-items: center;
+        gap: 8px;
+        min-height: 66px;
         height: auto;
-        padding: 12px 14px;
+        padding: 9px 12px;
+        border-radius: 12px;
       }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-readonly,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-editor-host,
       .cards-container.admin-card-view-list .card:not(.is-view-expanded) .card-edit-actions,
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-note,
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .discount-badge {
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-no {
         display: none;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .name {
-        font-size: 19px;
-        line-height: 1.25;
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .row-top {
+        grid-column: 1;
+        margin: 0;
+        align-self: stretch;
+        display: grid;
+        place-items: center;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .phone,
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .address {
-        font-size: 13px;
-        line-height: 1.35;
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-no-wrapper {
+        display: block;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .address,
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-container-view {
-        display: -webkit-box;
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .batch-check {
+        width: 22px;
+        height: 22px;
+        margin: 2px 0 0;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-card-list-summary {
+        display: contents;
+      }
+      .admin-card-list-date {
+        min-width: 0;
+      }
+      .admin-card-list-date span {
+        display: block;
+        color: #8290a3;
+        font-size: 11px;
+        font-weight: 800;
+      }
+      .admin-card-list-date strong {
+        display: block;
         overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 1;
+        color: #334155;
+        font-size: 16px;
+        font-weight: 900;
+        line-height: 1.25;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .amount {
-        font-size: 25px;
+      .admin-card-list-status {
+        display: grid;
+        gap: 4px;
+        justify-items: start;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-section {
-        margin-top: 8px;
-        padding-top: 8px;
+      .admin-card-list-change {
+        display: inline-flex;
+        max-width: 100%;
+        min-height: 22px;
+        align-items: center;
+        padding: 2px 7px;
+        overflow: hidden;
+        border: 1px solid #fb923c;
+        border-radius: 999px;
+        background: #fff7ed;
+        color: #c2410c;
+        font-size: 11px;
+        font-weight: 900;
+        line-height: 1.2;
+        text-overflow: ellipsis;
+        white-space: nowrap;
       }
-      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-container-view {
-        font-size: 14px;
-        line-height: 1.4;
+      .admin-card-list-recipient {
+        display: grid;
+        gap: 2px;
+        min-width: 0;
+      }
+      .admin-card-list-recipient strong {
+        overflow: hidden;
+        color: #1e293b;
+        font-size: 16px;
+        font-weight: 900;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .admin-card-list-recipient span {
+        flex-shrink: 0;
+        color: #475569;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .admin-card-list-product {
+        display: block;
+        overflow: hidden;
+        color: #375443;
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.35;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .admin-card-list-payment {
+        justify-self: start;
+        min-width: 0;
+      }
+      .admin-card-list-payment .payment-badge {
+        display: block;
+        width: 100%;
+        max-width: 150px;
+        overflow: hidden;
+        font-size: 11px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .admin-card-list-amount {
+        justify-self: end;
+        color: #15803d;
+        font-size: 21px;
+        font-weight: 900;
+        white-space: nowrap;
       }
       .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-view-expand {
+        grid-column: 8;
         min-height: 34px;
-        margin-top: 8px;
+        margin: 0;
+        padding: 0 4px;
+        font-size: 12px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .order-change-alert {
+        display: none !important;
       }
 
       @media screen and (min-width: 768px) {
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) {
-          display: grid;
-          grid-template-columns: 165px minmax(210px, 1.1fr) minmax(180px, 1fr) 155px 108px;
-          align-items: center;
-          gap: 12px;
+        .admin-card-view-toolbar {
+          max-width: 1024px;
         }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .row-top {
-          grid-column: 1;
-          margin: 0;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-content-editor-host {
-          display: none;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-readonly,
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .main-customer-block {
-          display: contents;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .customer-info-group {
-          grid-column: 2;
-          min-width: 0;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .customer-status-row {
-          margin-bottom: 3px;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .right-header-box {
-          grid-column: 4;
-          min-width: 0;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-section {
-          grid-column: 3;
-          min-width: 0;
-          margin: 0;
-          padding: 0;
-          border: 0;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-view-expand {
-          grid-column: 5;
-          margin: 0;
-        }
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-change-alert,
-        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-cancel-task-badge {
-          grid-column: 1 / -1;
-          width: 100%;
-        }
+      }
+
+      .admin-card-list-header:not([hidden]) {
+        display: grid;
+        grid-template-columns: 34px 145px 100px 108px minmax(239px, 1fr) 120px 92px 78px;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+        min-width: 996px;
+        margin: 0 0 6px;
+        padding: 8px 12px;
+        border: 1px solid #dbe4df;
+        border-radius: 10px;
+        background: #eef4f0;
+        color: #526375;
+        font-size: 12px;
+        font-weight: 900;
+      }
+      .admin-card-list-header-amount,
+      .admin-card-list-header-action {
+        text-align: right;
+      }
+      .admin-card-list-header > span:nth-child(2),
+      .admin-card-list-header > span:nth-child(3) {
+        position: sticky;
+        z-index: 7;
+        align-self: stretch;
+        display: flex;
+        align-items: center;
+        background: #eef4f0;
+      }
+      .admin-card-list-header > span:nth-child(2) {
+        left: 0;
+      }
+      .admin-card-list-header > span:nth-child(3) {
+        left: 153px;
+        box-shadow: 6px 0 8px rgba(71, 85, 105, 0.08);
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-date {
+        grid-column: 3;
+        position: sticky;
+        left: 153px;
+        z-index: 4;
+        align-self: stretch;
+        display: grid;
+        align-content: center;
+        background: var(--admin-card-list-bg, #ffffff);
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-date strong {
+        font-size: 12px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-status {
+        grid-column: 4;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-recipient {
+        grid-column: 2;
+        position: sticky;
+        left: 0;
+        z-index: 4;
+        align-self: stretch;
+        align-content: center;
+        padding-right: 8px;
+        background: var(--admin-card-list-bg, #ffffff);
+        box-shadow: 6px 0 8px rgba(71, 85, 105, 0.08);
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-recipient strong {
+        font-size: 14px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-recipient span {
+        font-size: 12px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-product {
+        grid-column: 5;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-payment {
+        grid-column: 6;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-payment .payment-badge {
+        max-width: 100%;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-list-amount {
+        grid-column: 7;
+        font-size: 16px;
       }
 
       @media screen and (max-width: 767px) {
         .admin-card-view-toolbar {
-          justify-content: flex-start;
-        }
-        .admin-card-view-status {
-          flex-basis: 100%;
+          margin-right: 0;
         }
         .admin-card-view-button {
-          padding: 0 9px;
+          width: 34px;
+          height: 34px;
+        }
+      }
+
+      @media screen and (min-width: 1200px) {
+        .admin-card-view-toolbar {
+          max-width: 1140px;
         }
       }
 
@@ -4283,16 +4480,6 @@
           </div>
         </div>
 
-        <div class="admin-card-view-toolbar" aria-label="訂單卡片顯示方式">
-          <span class="admin-card-view-label">顯示方式</span>
-          <div class="admin-card-view-switch" role="group" aria-label="訂單卡片顯示方式">
-            <button type="button" class="admin-card-view-button" data-admin-card-view="full" aria-pressed="false" onclick="setAdminCardViewMode('full')">▦ 完整</button>
-            <button type="button" class="admin-card-view-button" data-admin-card-view="compact" aria-pressed="false" onclick="setAdminCardViewMode('compact')">▤ 精簡</button>
-            <button type="button" class="admin-card-view-button" data-admin-card-view="list" aria-pressed="false" onclick="setAdminCardViewMode('list')">☷ 清單</button>
-          </div>
-          <span class="admin-card-view-status" id="adminCardViewStatus" aria-live="polite"></span>
-        </div>
-
         <div class="scroll-filter-row" id="statusFilterRow">
           <button class="active" onclick="filterByStatus('全部', this)">
             全部
@@ -4421,6 +4608,26 @@
         <button type="button" id="adminPrevPageBtn">上一頁</button>
         <span id="adminPaginationInfo">第 0-0 張／共 0 張</span>
         <button type="button" id="adminNextPageBtn">下一頁</button>
+      </div>
+
+      <div class="admin-card-list-scroll" id="adminCardListScroll">
+      <div class="admin-card-view-toolbar" aria-label="訂單卡片顯示方式">
+        <span class="admin-card-view-status" id="adminCardViewStatus" aria-live="polite"></span>
+        <div class="admin-card-view-switch" role="group" aria-label="訂單卡片顯示方式">
+          <button type="button" class="admin-card-view-button" data-admin-card-view="full" aria-label="完整卡片" title="完整卡片" aria-pressed="false" onclick="setAdminCardViewMode('full')"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i><span class="admin-card-view-button-label">完整卡片</span></button>
+          <button type="button" class="admin-card-view-button" data-admin-card-view="compact" aria-label="精簡卡片" title="精簡卡片" aria-pressed="false" onclick="setAdminCardViewMode('compact')"><i class="fa-solid fa-list" aria-hidden="true"></i><span class="admin-card-view-button-label">精簡卡片</span></button>
+          <button type="button" class="admin-card-view-button" data-admin-card-view="list" aria-label="清單表格" title="清單表格" aria-pressed="false" onclick="setAdminCardViewMode('list')"><i class="fa-solid fa-table-list" aria-hidden="true"></i><span class="admin-card-view-button-label">清單表格</span></button>
+        </div>
+      </div>
+      <div class="admin-card-list-header" id="adminCardListHeader" hidden aria-hidden="true">
+        <span>選取</span>
+        <span>收件人／電話</span>
+        <span>出貨日</span>
+        <span>狀態</span>
+        <span>商品摘要</span>
+        <span>付款</span>
+        <span class="admin-card-list-header-amount">金額</span>
+        <span class="admin-card-list-header-action">明細</span>
       </div>
 
       <div class="cards-container" id="cards-container">
@@ -4612,6 +4819,7 @@
             <div class="order-change-list"></div>
           </div>
         </div>
+      </div>
       </div>
 
       <div
@@ -7450,14 +7658,16 @@
         const isExpanded = card.classList.contains("is-view-expanded");
         button.setAttribute("aria-expanded", isExpanded ? "true" : "false");
         if (isExpanded) {
-          button.innerText = adminCardViewMode === "list" ? "收合明細" : "收合卡片";
+          button.innerText = adminCardViewMode === "list" ? "收合" : "收合卡片";
         } else {
-          button.innerText = adminCardViewMode === "list" ? "展開明細" : "展開處理";
+          button.innerText = adminCardViewMode === "list" ? "展開" : "展開處理";
         }
       }
 
       function syncAdminCardViewControls() {
         const container = document.getElementById("cards-container");
+        const listHeader = document.getElementById("adminCardListHeader");
+        const listScroll = document.getElementById("adminCardListScroll");
         if (container) {
           container.classList.remove(
             "admin-card-view-full",
@@ -7470,6 +7680,19 @@
             .querySelectorAll(":scope > .card")
             .forEach(syncAdminCardExpandButton);
         }
+        if (listHeader) {
+          listHeader.hidden = adminCardViewMode !== "list";
+          listHeader.setAttribute(
+            "aria-hidden",
+            adminCardViewMode === "list" ? "false" : "true",
+          );
+        }
+        if (listScroll) {
+          listScroll.classList.toggle(
+            "is-list-mode",
+            adminCardViewMode === "list",
+          );
+        }
         document
           .querySelectorAll("[data-admin-card-view]")
           .forEach((button) => {
@@ -7481,7 +7704,7 @@
         const status = document.getElementById("adminCardViewStatus");
         if (status) {
           status.classList.remove("is-warning");
-          status.innerText = `目前：${getAdminCardViewModeLabel(adminCardViewMode)}`;
+          status.innerText = "";
         }
       }
 
@@ -8629,6 +8852,24 @@
           statusMeta.badgeText = "已寄出・未收款";
         }
         const paymentClass = getPaymentClassFromState(paymentState);
+        const listStatusLabel =
+          {
+            待確認: "新訂單",
+            已安排出貨: "已安排",
+            已寄出: paymentState === "bank_unpaid" ? "寄出・未收款" : "已寄出",
+            已取消: "已取消",
+          }[orderStatus] || statusMeta.badgeText;
+        const listPaymentLabel =
+          {
+            cod: "貨到付款",
+            bank_unpaid: "未付款",
+            bank_paid: "已付款",
+            bank_paid_cod_balance: "追加款到付",
+            other_seasonal: "其他",
+          }[paymentState] || paymentLabel;
+        const listChangeTitle = pendingNoticeLabels.length
+          ? `待處理：${pendingNoticeLabels.join("、")}`
+          : "訂單資料異動待處理";
         const shippingDateMeta = getAdminCardShippingDateMeta({
           orderStatus,
           expectedShippingDate,
@@ -8644,6 +8885,9 @@
         const lineDisplayName = String(order?.lineDisplayName ?? "").trim();
         const createdAt = String(order?.createdAt ?? "").trim();
         const lastUpdatedAt = String(order?.lastUpdatedAt ?? "").trim();
+        const listProductSummary = String(order?.itemsSummary || "未提供")
+          .replace(/\s+/g, " ")
+          .trim();
         const actualShippingDateRow = buildReadOnlyExtraRow(
           "實際寄出日期",
           actualShippingDate,
@@ -8706,6 +8950,26 @@
                     : ""
                 }
               </div>
+            </div>
+
+            <div class="admin-card-list-summary" aria-label="訂單清單摘要">
+              <div class="admin-card-list-recipient">
+                <strong>${escapeHtml(recipientName || "未提供")}</strong>
+                <span>${escapeHtml(recipientPhone || "未提供")}</span>
+              </div>
+              <div class="admin-card-list-date">
+                <span>${escapeHtml(shippingDateMeta.label)}</span>
+                <strong>${escapeHtml(shippingDateMeta.value)}</strong>
+              </div>
+              <div class="admin-card-list-status">
+                <span class="state-badge ${escapeHtml(statusMeta.badgeClass)}" title="${escapeHtml(statusMeta.badgeText)}">${escapeHtml(listStatusLabel)}</span>
+                ${shouldShowOrderChangeAlert ? `<span class="admin-card-list-change" title="${escapeHtml(listChangeTitle)}">資料異動</span>` : ""}
+              </div>
+              <div class="admin-card-list-product" title="${escapeHtml(listProductSummary)}">${escapeHtml(listProductSummary)}</div>
+              <div class="admin-card-list-payment">
+                <span class="payment-badge ${escapeHtml(paymentClass)}" title="${escapeHtml(paymentLabel)}">${escapeHtml(listPaymentLabel)}</span>
+              </div>
+              <div class="admin-card-list-amount">$${escapeHtml(finalAmount)}</div>
             </div>
 
             <div class="admin-content-editor-host"></div>
