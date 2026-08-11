@@ -1579,6 +1579,10 @@
         background: #e0f2fe;
         color: #0c4a6e;
       }
+      .state-badge-unpaid-shipped {
+        background: #ffedd5;
+        color: #9a3412;
+      }
       .state-badge-cancelled {
         background: #f1f5f9;
         color: #334155;
@@ -2958,6 +2962,12 @@
       .admin-mark-shipped-submit:disabled {
         cursor: not-allowed;
         opacity: 0.5;
+      }
+      .admin-mark-shipped-submit.is-unpaid-exception {
+        background: #d97706;
+      }
+      .admin-mark-shipped-submit.is-unpaid-exception:active {
+        background: #b45309;
       }
       .admin-mark-shipped-feedback {
         min-height: 20px;
@@ -8165,6 +8175,10 @@
           order?.paymentMethod,
           order?.paymentStatus,
         );
+        if (orderStatus === "已寄出" && paymentState === "bank_unpaid") {
+          statusMeta.badgeClass += " state-badge-unpaid-shipped";
+          statusMeta.badgeText = "已寄出・未收款";
+        }
         const paymentClass = getPaymentClassFromState(paymentState);
         const shippingDateMeta = getAdminCardShippingDateMeta({
           orderStatus,
@@ -9506,8 +9520,7 @@
               noteLocked ||
               shippedSaving ||
               workflowSaving ||
-              (!!workflowEditor && adminWorkflowIsDirty(workflowEditor)) ||
-              shippedPanel.dataset.bankUnpaid === "true";
+              (!!workflowEditor && adminWorkflowIsDirty(workflowEditor));
           }
         }
       }
@@ -10016,6 +10029,7 @@
           ? pendingNoticeLabels.join("、")
           : "本次資料異動";
         const submitLabel = canLineNotify ? "發送已寄出通知" : "標記已寄出";
+        const submitButtonLabel = isBankUnpaid ? "未收款寄出" : submitLabel;
         const directNoteText = canLineNotify
           ? "發送已寄出通知，並標記為已寄出。"
           : "標記為已寄出，稍後請電話通知客人。";
@@ -10026,7 +10040,7 @@
             data-mark-shipped="true"
             data-direct-shipment="${isDirectPendingShipment ? "true" : "false"}"
             data-bank-unpaid="${isBankUnpaid ? "true" : "false"}"
-            data-send-label="${escapeHtml(submitLabel)}"
+            data-send-label="${escapeHtml(submitButtonLabel)}"
           >
             <div class="admin-mark-shipped-grid">
               ${
@@ -10042,7 +10056,7 @@
                 isBankUnpaid
                   ? `
                     <div class="admin-mark-shipped-payment-warning">
-                      ⚠ 銀行轉帳尚未確認付款，請先改為已付款，才能標記已寄出或發送寄出通知。
+                      ⚠ 此訂單尚未收款。仍可使用下方「未收款寄出」，付款狀態會保留未付款。
                     </div>
                   `
                   : ""
@@ -10086,8 +10100,8 @@
                     </div>
                   `
               }
-              <button type="button" class="admin-mark-shipped-submit"${isBankUnpaid ? " disabled" : ""}>
-                ${submitLabel}
+              <button type="button" class="admin-mark-shipped-submit${isBankUnpaid ? " is-unpaid-exception" : ""}">
+                ${escapeHtml(submitButtonLabel)}
               </button>
               ${
                 canBundleChangeNotice
@@ -10149,9 +10163,12 @@
         bundleOption?.classList.toggle("hidden", isSkip);
         if (bundleCheckbox && isSkip) bundleCheckbox.checked = false;
         if (submitButton) {
-          submitButton.innerText = isSkip
-            ? "標記已寄出但不通知"
-            : panel.dataset.sendLabel || "標記已寄出";
+          submitButton.innerText =
+            panel.dataset.bankUnpaid === "true"
+              ? "未收款寄出"
+              : isSkip
+                ? "標記已寄出但不通知"
+                : panel.dataset.sendLabel || "標記已寄出";
         }
       }
 
@@ -10169,15 +10186,13 @@
         const shippedSaving = panel.dataset.saving === "true";
         const noteLocked = adminNoteIsOpen(card);
         adminMarkOrderShippedRefreshMode(panel);
-        const shipmentBlockedByPayment = panel.dataset.bankUnpaid === "true";
         const submitButton = panel.querySelector(".admin-mark-shipped-submit");
         if (submitButton) {
           submitButton.disabled =
             noteLocked ||
             isDirty ||
             workflowSaving ||
-            shippedSaving ||
-            shipmentBlockedByPayment;
+            shippedSaving;
         }
       }
 
@@ -10233,7 +10248,7 @@
           ORDER_SHIPPED_SKIP_NOT_OVERDUE:
             "確定出貨日期尚未超過，請使用正常寄出通知流程。",
           ORDER_SHIPPED_BANK_UNPAID:
-            "銀行轉帳尚未確認付款，請先改為已付款。",
+            "此訂單尚未收款，請重新讀取後使用「未收款寄出」。",
           ORDER_SHIPPED_WRITE_VERIFY_FAILED:
             "確認已寄出失敗，資料未能安全寫入。",
           ORDER_SHIPPED_ROLLBACK_FAILED: "結果無法確認，請停止操作並重新整理。",
@@ -10319,14 +10334,6 @@
           );
           return;
         }
-        if (isBankUnpaid) {
-          adminMarkOrderShippedSetFeedback(
-            panel,
-            "銀行轉帳尚未確認付款，請先改為已付款。",
-            true,
-          );
-          return;
-        }
         if (notificationMode === "skip" && !skipReason) {
           adminMarkOrderShippedSetFeedback(
             panel,
@@ -10351,14 +10358,24 @@
           notificationMode === "skip"
             ? `已選擇「標記已寄出但不通知」。\n不通知原因：${skipReason}\n不會發送 LINE，也不會建立待發送的寄出通知。\n系統會留下操作者、時間與原因紀錄。\n\n`
             : "";
+        const unpaidShipmentMessage = isBankUnpaid
+          ? "⚠ 此訂單尚未收款。\n付款狀態會保留「未付款」。\n\n"
+          : "";
+        const confirmQuestion = isBankUnpaid
+          ? notificationMode === "send" && canLineNotify
+            ? "確定仍要標記已寄出並發送通知嗎？"
+            : "確定仍要標記已寄出嗎？"
+          : "確定繼續嗎？";
         const confirmed = window.confirm(
           `訂單編號：${orderNo}\n` +
             `實際寄出日期：${actualShippingDate}\n\n` +
+            unpaidShipmentMessage +
             directShipmentMessage +
             bundleMessage +
             skipMessage +
             "將把訂單狀態改為「已寄出」。\n" +
-            "此包不提供前端直接回復功能，確定繼續嗎？",
+            "此包不提供前端直接回復功能。\n" +
+            confirmQuestion,
         );
         if (!confirmed) return;
 
@@ -10395,12 +10412,14 @@
               bundleChangeNotice: String(
                 notificationMode === "send" && bundleChangeNotice,
               ),
+              confirmUnpaidShipment: String(isBankUnpaid),
               notificationMode,
               skipReason: notificationMode === "skip" ? skipReason : "",
               requestKey: createAdminRequestKey("adminMarkOrderShipped", [
                 orderNo,
                 actualShippingDate,
                 notificationMode,
+                isBankUnpaid ? "unpaid-confirmed" : "payment-settled",
                 notificationMode === "skip"
                   ? skipReason
                   : String(bundleChangeNotice),
@@ -11407,15 +11426,7 @@
             );
             if (panel && card && card.contains(panel)) {
               adminMarkOrderShippedRefreshState(card);
-              if (panel.dataset.bankUnpaid === "true") {
-                adminMarkOrderShippedSetFeedback(
-                  panel,
-                  "銀行轉帳尚未確認付款，請先改為已付款。",
-                  true,
-                );
-              } else {
-                adminMarkOrderShippedSetFeedback(panel, "");
-              }
+              adminMarkOrderShippedSetFeedback(panel, "");
             }
             return;
           }
@@ -13968,8 +13979,11 @@
           badgeClass = "state-badge-confirmed";
         } else if (newStatus === "已寄出") {
           card.classList.add("status-shipped");
-          badgeText = "已寄出";
-          badgeClass = "state-badge-shipped";
+          const isBankUnpaid = card.dataset.paymentState === "bank_unpaid";
+          badgeText = isBankUnpaid ? "已寄出・未收款" : "已寄出";
+          badgeClass = isBankUnpaid
+            ? "state-badge-shipped state-badge-unpaid-shipped"
+            : "state-badge-shipped";
         } else if (newStatus === "已取消") {
           card.classList.add("status-cancelled");
           badgeText = "已取消";
