@@ -7,7 +7,7 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>出貨後台</title>
- 
+
     <style>
       * {
         margin: 0;
@@ -12167,58 +12167,56 @@
         `;
       }
 
-      function getShippingManifestPrintRowUnits(order) {
-        const itemLines = String(order?.itemsSummary || "")
-          .split(/\r?\n/)
-          .filter((line) => line.trim()).length;
-        const noteLines = String(getShippingManifestNote(order) || "")
-          .split(/\r?\n/)
-          .filter((line) => line.trim()).length;
-        const trackingLines = Math.max(
-          1,
-          Math.ceil(getShippingManifestOrderBoxCount(order) / 3),
-        );
-        const visualLines = Math.max(1, itemLines, noteLines, trackingLines);
-        return Math.max(1, Math.ceil(visualLines / 3));
-      }
-
-      function getShippingManifestBlankRowCount(
-        printableRowUnits,
-        firstPageRowUnits = 15,
-        continuationPageRowUnits = 22,
+      function getShippingManifestMeasuredBlankRowCount(
+        rowHeights,
+        firstPageAvailableHeight,
+        continuationPageAvailableHeight,
+        blankRowHeight,
       ) {
-        const normalizedFirstPageUnits = Math.max(
-          1,
-          Number(firstPageRowUnits) || 15,
+        const normalizedRowHeights = Array.isArray(rowHeights)
+          ? rowHeights
+              .map((height) => Number(height))
+              .filter((height) => Number.isFinite(height) && height > 0)
+          : [];
+        const firstPageHeight = Number(firstPageAvailableHeight);
+        const continuationPageHeight = Number(
+          continuationPageAvailableHeight,
         );
-        const normalizedContinuationPageUnits = Math.max(
-          1,
-          Number(continuationPageRowUnits) || 22,
-        );
-        const normalizedPrintableUnits = Math.max(
-          0,
-          Number(printableRowUnits) || 0,
-        );
-        if (normalizedPrintableUnits <= normalizedFirstPageUnits) {
-          return normalizedFirstPageUnits - normalizedPrintableUnits;
+        const normalizedBlankRowHeight = Number(blankRowHeight);
+        if (
+          !Number.isFinite(firstPageHeight) ||
+          firstPageHeight <= 0 ||
+          !Number.isFinite(continuationPageHeight) ||
+          continuationPageHeight <= 0 ||
+          !Number.isFinite(normalizedBlankRowHeight) ||
+          normalizedBlankRowHeight <= 0
+        ) {
+          return 0;
         }
-        const continuationUnits =
-          normalizedPrintableUnits - normalizedFirstPageUnits;
-        const finalPageUnits =
-          continuationUnits % normalizedContinuationPageUnits;
-        return finalPageUnits === 0
-          ? 0
-          : normalizedContinuationPageUnits - finalPageUnits;
+
+        const tolerance = 0.5;
+        let availableHeight = firstPageHeight;
+        for (const rowHeight of normalizedRowHeights) {
+          if (rowHeight > availableHeight + tolerance) {
+            availableHeight = continuationPageHeight;
+          }
+          if (rowHeight > availableHeight + tolerance) {
+            return 0;
+          }
+          availableHeight = Math.max(0, availableHeight - rowHeight);
+        }
+        return Math.max(
+          0,
+          Math.floor((availableHeight + tolerance) / normalizedBlankRowHeight),
+        );
       }
 
-      function buildShippingManifestBlankRowsHtml(orders) {
-        const printableRowUnits = orders.reduce(
-          (sum, order) => sum + getShippingManifestPrintRowUnits(order),
+      function buildShippingManifestBlankRowsHtml(orders, blankRowCount) {
+        const normalizedBlankRowCount = Math.max(
           0,
+          Math.floor(Number(blankRowCount) || 0),
         );
-        const blankRowCount =
-          getShippingManifestBlankRowCount(printableRowUnits);
-        return Array.from({ length: blankRowCount }, (_, index) => {
+        return Array.from({ length: normalizedBlankRowCount }, (_, index) => {
           return `
             <tr class="shipping-manifest-blank-row" aria-hidden="true">
               <td class="cell-center">${escapeHtml(orders.length + index + 1)}</td>
@@ -12231,6 +12229,99 @@
             </tr>
           `;
         }).join("");
+      }
+
+      function prepareShippingManifestBlankRowsForPrint(orders) {
+        const panel = document.getElementById("shippingManifestPanel");
+        const tbody = document.getElementById("shippingManifestTableBody");
+        const table = tbody?.closest("table");
+        const thead = table?.querySelector("thead");
+        if (!panel || !tbody || !table || !thead) return 0;
+
+        tbody
+          .querySelectorAll(".shipping-manifest-blank-row")
+          .forEach((row) => row.remove());
+        const dataRows = [...tbody.querySelectorAll(".shipping-manifest-data-row")];
+        if (!dataRows.length) return 0;
+
+        const measurement = document.createElement("div");
+        measurement.setAttribute("aria-hidden", "true");
+        measurement.style.cssText =
+          "position:absolute;visibility:hidden;pointer-events:none;width:100mm;height:1px;";
+        document.body.appendChild(measurement);
+        const pixelsPerMillimeter = measurement.getBoundingClientRect().width / 100;
+        measurement.remove();
+        if (!Number.isFinite(pixelsPerMillimeter) || pixelsPerMillimeter <= 0) {
+          return 0;
+        }
+
+        tbody.insertAdjacentHTML(
+          "beforeend",
+          buildShippingManifestBlankRowsHtml(orders, 1),
+        );
+        const sampleBlankRow = tbody.querySelector(
+          ".shipping-manifest-blank-row:last-child",
+        );
+        const blankRowHeight = sampleBlankRow?.getBoundingClientRect().height || 0;
+        sampleBlankRow?.remove();
+
+        const pageContentHeight = 277 * pixelsPerMillimeter;
+        const printSafetyHeight = 0.5 * pixelsPerMillimeter;
+        const panelRect = panel.getBoundingClientRect();
+        const theadRect = thead.getBoundingClientRect();
+        const firstPageAvailableHeight = Math.max(
+          0,
+          pageContentHeight -
+            (theadRect.bottom - panelRect.top) -
+            printSafetyHeight,
+        );
+        const continuationPageAvailableHeight = Math.max(
+          0,
+          pageContentHeight - theadRect.height - printSafetyHeight,
+        );
+        const blankRowCount = getShippingManifestMeasuredBlankRowCount(
+          dataRows.map((row) => row.getBoundingClientRect().height),
+          firstPageAvailableHeight,
+          continuationPageAvailableHeight,
+          blankRowHeight,
+        );
+        tbody.insertAdjacentHTML(
+          "beforeend",
+          buildShippingManifestBlankRowsHtml(orders, blankRowCount),
+        );
+        return blankRowCount;
+      }
+
+      function activateShippingManifestPrintMeasurementStyles() {
+        document
+          .getElementById("shippingManifestPrintMeasurementStyles")
+          ?.remove();
+        const printRules = [];
+        [...document.styleSheets].forEach((styleSheet) => {
+          let rules = [];
+          try {
+            rules = [...(styleSheet.cssRules || [])];
+          } catch (error) {
+            return;
+          }
+          rules.forEach((rule) => {
+            if (
+              rule instanceof CSSMediaRule &&
+              String(rule.conditionText || "").trim() === "print"
+            ) {
+              printRules.push(
+                [...rule.cssRules].map((printRule) => printRule.cssText).join("\n"),
+              );
+            }
+          });
+        });
+        if (!printRules.length) return null;
+        const style = document.createElement("style");
+        style.id = "shippingManifestPrintMeasurementStyles";
+        style.setAttribute("data-purpose", "temporary-print-measurement");
+        style.textContent = printRules.join("\n");
+        document.head.appendChild(style);
+        return style;
       }
 
       function getShippingManifestOrderBoxCount(order) {
@@ -12389,7 +12480,7 @@
             const note = getShippingManifestNote(order);
             const senderName = String(order?.buyerName || "").trim();
             return `
-              <tr>
+              <tr class="shipping-manifest-data-row">
                 <td class="cell-center">${escapeHtml(getShippingManifestSequenceLabel(order, index))}${
                   isRangeMode
                     ? `<span class="shipping-manifest-row-date">${escapeHtml(formatShippingManifestRowDate(order?.expectedShippingDate || ""))}</span>`
@@ -12405,8 +12496,7 @@
             `;
           })
           .join("");
-        tbody.innerHTML =
-          orderRowsHtml + buildShippingManifestBlankRowsHtml(orders);
+        tbody.innerHTML = orderRowsHtml;
       }
 
       function filterBySingleShippingDate(btnElement) {
@@ -12431,13 +12521,26 @@
           return;
         }
         renderShippingManifest();
+        const orders = getShippingManifestOrdersForRange(startDate, endDate);
         document.body.classList.add("shipping-manifest-printing");
+        const measurementStyles =
+          activateShippingManifestPrintMeasurementStyles();
+        const preparePrintLayout = () => {
+          prepareShippingManifestBlankRowsForPrint(orders);
+        };
         const cleanupPrintState = () => {
           document.body.classList.remove("shipping-manifest-printing");
+          document
+            .querySelectorAll(".shipping-manifest-blank-row")
+            .forEach((row) => row.remove());
+          measurementStyles?.remove();
+          window.removeEventListener("beforeprint", preparePrintLayout);
           window.removeEventListener("afterprint", cleanupPrintState);
         };
+        window.addEventListener("beforeprint", preparePrintLayout);
         window.addEventListener("afterprint", cleanupPrintState);
         window.setTimeout(() => {
+          preparePrintLayout();
           window.print();
         }, 50);
       }
