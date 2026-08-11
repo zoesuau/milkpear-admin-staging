@@ -941,6 +941,62 @@
         font: inherit;
       }
 
+      .shipping-manifest-search {
+        display: grid;
+        gap: 5px;
+        margin-top: 12px;
+      }
+
+      .shipping-manifest-search-label {
+        color: #475569;
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .shipping-manifest-search-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .shipping-manifest-search input {
+        box-sizing: border-box;
+        min-width: 0;
+        min-height: 40px;
+        flex: 1 1 auto;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #1f2937;
+        padding: 7px 10px;
+        font: inherit;
+      }
+
+      .shipping-manifest-search input:focus {
+        border-color: #4f7f63;
+        outline: 2px solid rgba(79, 127, 99, 0.15);
+        outline-offset: 1px;
+      }
+
+      .shipping-manifest-search-clear {
+        min-height: 40px;
+        flex: 0 0 auto;
+        border: 1px solid #cbd5e1;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #475569;
+        padding: 7px 14px;
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .shipping-manifest-search-note {
+        color: #64748b;
+        font-size: 11px;
+        font-weight: 700;
+        line-height: 1.45;
+      }
+
       .shipping-manifest-ordering {
         display: flex;
         flex-wrap: wrap;
@@ -4431,6 +4487,33 @@
             />
           </label>
         </div>
+        <div class="shipping-manifest-search">
+          <label
+            class="shipping-manifest-search-label"
+            for="shippingManifestSearchInput"
+          >
+            搜尋出貨單
+          </label>
+          <span class="shipping-manifest-search-row">
+            <input
+              type="search"
+              id="shippingManifestSearchInput"
+              placeholder="姓名、電話、地址、訂單編號或宅配單號"
+              autocomplete="off"
+              oninput="setShippingManifestSearchQuery(this.value)"
+            />
+            <button
+              type="button"
+              class="shipping-manifest-search-clear"
+              onclick="clearShippingManifestSearch()"
+            >
+              清除
+            </button>
+          </span>
+          <span class="shipping-manifest-search-note">
+            僅篩選下方出貨總表與列印內容，不影響黑貓 CSV 匯出。
+          </span>
+        </div>
         <div class="shipping-manifest-ordering">
           <label>
             出貨總表排列方式
@@ -5384,6 +5467,7 @@
       let shippingManifestDateMode = "today";
       let shippingManifestSortMode = "original";
       let shippingManifestPrioritySenderKey = "";
+      let shippingManifestSearchQuery = "";
       let shippingTrackingImportPreview = null;
       let shippingTrackingImportSubmitting = false;
       let ezcatExportCandidates = [];
@@ -11757,6 +11841,66 @@
           .trim();
       }
 
+      function normalizeShippingManifestSearchText(value) {
+        return String(value ?? "")
+          .normalize("NFKC")
+          .toLocaleLowerCase("zh-TW")
+          .trim();
+      }
+
+      function compactShippingManifestSearchText(value) {
+        return normalizeShippingManifestSearchText(value).replace(
+          /[\s\-()（）－—–.．\/／*＊]+/g,
+          "",
+        );
+      }
+
+      function shippingManifestOrderMatchesSearch(order, query) {
+        const normalizedQuery = normalizeShippingManifestSearchText(query);
+        if (!normalizedQuery) return true;
+        const values = [
+          order?.orderNo,
+          order?.recipientName,
+          order?.recipientPhone,
+          order?.recipientAddress,
+          order?.buyerName,
+          order?.buyerPhone,
+          order?.trackingNo,
+        ];
+        const searchableText = normalizeShippingManifestSearchText(
+          values.filter(Boolean).join("\n"),
+        );
+        const compactSearchableText = compactShippingManifestSearchText(
+          searchableText,
+        );
+        return normalizedQuery
+          .split(/\s+/)
+          .filter(Boolean)
+          .every((token) => {
+            return (
+              searchableText.includes(token) ||
+              compactSearchableText.includes(
+                compactShippingManifestSearchText(token),
+              )
+            );
+          });
+      }
+
+      function setShippingManifestSearchQuery(query) {
+        shippingManifestSearchQuery = String(query || "");
+        renderShippingManifest();
+      }
+
+      function clearShippingManifestSearch() {
+        shippingManifestSearchQuery = "";
+        const input = document.getElementById("shippingManifestSearchInput");
+        if (input) {
+          input.value = "";
+          input.focus();
+        }
+        renderShippingManifest();
+      }
+
       function getShippingManifestSenderName(order) {
         return String(order?.buyerName || "").trim() || "未填寄件人";
       }
@@ -11907,6 +12051,12 @@
               expectedShippingDate <= endDate
             );
           })
+          .filter((order) =>
+            shippingManifestOrderMatchesSearch(
+              order,
+              shippingManifestSearchQuery,
+            ),
+          )
           .sort((a, b) => {
             const aTime = Date.parse(String(a?.createdAt || ""));
             const bTime = Date.parse(String(b?.createdAt || ""));
@@ -11941,6 +12091,7 @@
           recipientPhone: candidate?.recipientPhone,
           recipientAddress: candidate?.recipientAddress,
           buyerName: manifest.buyerName,
+          buyerPhone: manifest.buyerPhone || candidate?.senderPhone,
           itemsSummary: manifest.itemsSummary,
           totalBoxes: manifest.totalBoxes,
           finalAmount: manifest.finalAmount,
@@ -12438,8 +12589,15 @@
           : "—";
 
         const orderingSummary = getShippingManifestOrderingSummary(orders);
+        const normalizedSearchQuery = normalizeShippingManifestSearchText(
+          shippingManifestSearchQuery,
+        );
+        const searchSummary = normalizedSearchQuery
+          ? `搜尋：${shippingManifestSearchQuery.trim()}`
+          : "";
+        const subtitleDetails = [orderingSummary, searchSummary].filter(Boolean);
         subtitle.innerText = hasValidDateRange
-          ? `${isRangeMode ? "出貨區間" : "出貨日期"}：${dateLabel}｜列印時間：${formatShippingManifestPrintTime()}${orderingSummary ? `｜${orderingSummary}` : ""}`
+          ? `${isRangeMode ? "出貨區間" : "出貨日期"}：${dateLabel}｜列印時間：${formatShippingManifestPrintTime()}${subtitleDetails.length ? `｜${subtitleDetails.join("｜")}` : ""}`
           : isRangeMode && startDate && endDate && startDate > endDate
             ? "開始日期不可晚於結束日期"
             : "請選擇出貨日期或日期區間";
@@ -12464,9 +12622,11 @@
 
         if (!orders.length) {
           panel.classList.add("is-empty");
-          empty.innerText = isRangeMode
-            ? "此日期區間沒有出貨訂單"
-            : "此日期沒有出貨訂單";
+          empty.innerText = normalizedSearchQuery
+            ? `找不到符合「${shippingManifestSearchQuery.trim()}」的出貨訂單`
+            : isRangeMode
+              ? "此日期區間沒有出貨訂單"
+              : "此日期沒有出貨訂單";
           tbody.innerHTML = "";
           if (printButton) printButton.disabled = true;
           return;
