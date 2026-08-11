@@ -3229,6 +3229,211 @@
         }
       }
 
+      /* 訂單卡片顯示方式：完整、精簡、清單 */
+      .admin-card-view-toolbar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: -2px 0 12px;
+      }
+      .admin-card-view-label,
+      .admin-card-view-status {
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 800;
+      }
+      .admin-card-view-switch {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid #dbe4df;
+        border-radius: 12px;
+        background: #f8faf9;
+      }
+      .admin-card-view-button {
+        min-height: 34px;
+        padding: 0 11px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: #526375;
+        font-size: 13px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .admin-card-view-button:hover {
+        background: #e8f1eb;
+      }
+      .admin-card-view-button.active,
+      .admin-card-view-button[aria-pressed="true"] {
+        background: #4f7f63;
+        color: #ffffff;
+        box-shadow: 0 2px 6px rgba(79, 127, 99, 0.2);
+      }
+      .admin-card-view-status.is-warning {
+        color: #b45309;
+      }
+      .admin-card-view-expand {
+        display: none;
+        width: 100%;
+        min-height: 38px;
+        margin-top: 12px;
+        border: 1px solid #8fb6a0;
+        border-radius: 10px;
+        background: rgba(255, 255, 255, 0.72);
+        color: #356448;
+        font-size: 14px;
+        font-weight: 900;
+        cursor: pointer;
+      }
+      .cards-container.admin-card-view-compact .admin-card-view-expand,
+      .cards-container.admin-card-view-list .admin-card-view-expand {
+        display: block;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) {
+        height: auto;
+        padding: 14px;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .row-top {
+        margin-bottom: 8px;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .name {
+        font-size: 23px;
+        line-height: 1.25;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .phone,
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .address {
+        font-size: 15px;
+        line-height: 1.4;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .address {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 2;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .amount {
+        font-size: 31px;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .product-section {
+        margin-top: 10px;
+        padding-top: 10px;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) .product-container-view {
+        font-size: 16px;
+        line-height: 1.45;
+      }
+      .cards-container.admin-card-view-compact .card:not(.is-view-expanded) > .admin-content-readonly > details,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-readonly > details {
+        display: none;
+      }
+
+      .cards-container.admin-card-view-list {
+        grid-template-columns: minmax(0, 1fr);
+        gap: 8px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) {
+        height: auto;
+        padding: 12px 14px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .card-edit-actions,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-note,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .discount-badge {
+        display: none;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .name {
+        font-size: 19px;
+        line-height: 1.25;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .phone,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .address {
+        font-size: 13px;
+        line-height: 1.35;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .address,
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-container-view {
+        display: -webkit-box;
+        overflow: hidden;
+        -webkit-box-orient: vertical;
+        -webkit-line-clamp: 1;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .amount {
+        font-size: 25px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-section {
+        margin-top: 8px;
+        padding-top: 8px;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-container-view {
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-view-expand {
+        min-height: 34px;
+        margin-top: 8px;
+      }
+
+      @media screen and (min-width: 768px) {
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) {
+          display: grid;
+          grid-template-columns: 165px minmax(210px, 1.1fr) minmax(180px, 1fr) 155px 108px;
+          align-items: center;
+          gap: 12px;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .row-top {
+          grid-column: 1;
+          margin: 0;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-content-editor-host {
+          display: none;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) > .admin-content-readonly,
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .main-customer-block {
+          display: contents;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .customer-info-group {
+          grid-column: 2;
+          min-width: 0;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .customer-status-row {
+          margin-bottom: 3px;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .right-header-box {
+          grid-column: 4;
+          min-width: 0;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .product-section {
+          grid-column: 3;
+          min-width: 0;
+          margin: 0;
+          padding: 0;
+          border: 0;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-card-view-expand {
+          grid-column: 5;
+          margin: 0;
+        }
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .order-change-alert,
+        .cards-container.admin-card-view-list .card:not(.is-view-expanded) .admin-cancel-task-badge {
+          grid-column: 1 / -1;
+          width: 100%;
+        }
+      }
+
+      @media screen and (max-width: 767px) {
+        .admin-card-view-toolbar {
+          justify-content: flex-start;
+        }
+        .admin-card-view-status {
+          flex-basis: 100%;
+        }
+        .admin-card-view-button {
+          padding: 0 9px;
+        }
+      }
+
       @media print {
         @page {
           size: A4 portrait;
@@ -4076,6 +4281,16 @@
             </button>
             <div class="admin-refresh-meta" id="adminRefreshMeta">尚未更新</div>
           </div>
+        </div>
+
+        <div class="admin-card-view-toolbar" aria-label="訂單卡片顯示方式">
+          <span class="admin-card-view-label">顯示方式</span>
+          <div class="admin-card-view-switch" role="group" aria-label="訂單卡片顯示方式">
+            <button type="button" class="admin-card-view-button" data-admin-card-view="full" aria-pressed="false" onclick="setAdminCardViewMode('full')">▦ 完整</button>
+            <button type="button" class="admin-card-view-button" data-admin-card-view="compact" aria-pressed="false" onclick="setAdminCardViewMode('compact')">▤ 精簡</button>
+            <button type="button" class="admin-card-view-button" data-admin-card-view="list" aria-pressed="false" onclick="setAdminCardViewMode('list')">☷ 清單</button>
+          </div>
+          <span class="admin-card-view-status" id="adminCardViewStatus" aria-live="polite"></span>
         </div>
 
         <div class="scroll-filter-row" id="statusFilterRow">
@@ -5455,9 +5670,12 @@
       let adminNotificationSkipCard = null;
       let adminNotificationSkipSubmitting = false;
       const ADMIN_ORDERS_PER_PAGE = 20;
+      const ADMIN_CARD_VIEW_MODE_KEY = "milkpearAdminCardViewModeV1";
+      const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
+      let adminCardViewMode = "compact";
       let currentAdminName =
         String(sessionStorage.getItem(ADMIN_DISPLAY_NAME_KEY) || "").trim() ||
         "後台管理員";
@@ -7179,6 +7397,153 @@
         );
       }
 
+      function normalizeAdminCardViewMode(mode) {
+        const normalized = String(mode || "").trim().toLowerCase();
+        return ADMIN_CARD_VIEW_MODES.has(normalized) ? normalized : "compact";
+      }
+
+      function getSavedAdminCardViewMode() {
+        try {
+          return normalizeAdminCardViewMode(
+            window.localStorage.getItem(ADMIN_CARD_VIEW_MODE_KEY),
+          );
+        } catch (error) {
+          return "compact";
+        }
+      }
+
+      function getAdminCardViewModeLabel(mode) {
+        return {
+          full: "完整卡片",
+          compact: "精簡卡片",
+          list: "清單模式",
+        }[normalizeAdminCardViewMode(mode)];
+      }
+
+      function adminCardHasBlockingWork(card) {
+        if (!card) return false;
+        return (
+          card.dataset.contentEditing === "true" ||
+          card.dataset.customerEditing === "true" ||
+          !!card.querySelector(
+            [
+              '.admin-note-editor[data-open="true"]',
+              '.admin-workflow-editor[data-saving="true"]',
+              '.admin-note-editor[data-saving="true"]',
+              '.admin-mark-shipped-panel[data-saving="true"]',
+            ].join(","),
+          ) ||
+          card.dataset.notificationSaving === "true"
+        );
+      }
+
+      function hasBlockingAdminCardViewSwitchWork() {
+        if (adminBatchProcessing || adminCreateOrderSubmitting) return true;
+        return [...document.querySelectorAll("#cards-container .card")].some(
+          adminCardHasBlockingWork,
+        );
+      }
+
+      function syncAdminCardExpandButton(card) {
+        const button = card?.querySelector(":scope > .admin-card-view-expand");
+        if (!button) return;
+        const isExpanded = card.classList.contains("is-view-expanded");
+        button.setAttribute("aria-expanded", isExpanded ? "true" : "false");
+        if (isExpanded) {
+          button.innerText = adminCardViewMode === "list" ? "收合明細" : "收合卡片";
+        } else {
+          button.innerText = adminCardViewMode === "list" ? "展開明細" : "展開處理";
+        }
+      }
+
+      function syncAdminCardViewControls() {
+        const container = document.getElementById("cards-container");
+        if (container) {
+          container.classList.remove(
+            "admin-card-view-full",
+            "admin-card-view-compact",
+            "admin-card-view-list",
+          );
+          container.classList.add(`admin-card-view-${adminCardViewMode}`);
+          container.dataset.cardViewMode = adminCardViewMode;
+          container
+            .querySelectorAll(":scope > .card")
+            .forEach(syncAdminCardExpandButton);
+        }
+        document
+          .querySelectorAll("[data-admin-card-view]")
+          .forEach((button) => {
+            const isActive =
+              button.dataset.adminCardView === adminCardViewMode;
+            button.classList.toggle("active", isActive);
+            button.setAttribute("aria-pressed", isActive ? "true" : "false");
+          });
+        const status = document.getElementById("adminCardViewStatus");
+        if (status) {
+          status.classList.remove("is-warning");
+          status.innerText = `目前：${getAdminCardViewModeLabel(adminCardViewMode)}`;
+        }
+      }
+
+      function setAdminCardViewMode(mode, options = {}) {
+        const nextMode = normalizeAdminCardViewMode(mode);
+        const status = document.getElementById("adminCardViewStatus");
+        if (!options.force && hasBlockingAdminCardViewSwitchWork()) {
+          if (status) {
+            status.classList.add("is-warning");
+            status.innerText = "請先完成或取消目前的編輯／處理";
+          }
+          return false;
+        }
+        adminCardViewMode = nextMode;
+        document
+          .querySelectorAll("#cards-container > .card.is-view-expanded")
+          .forEach((card) => card.classList.remove("is-view-expanded"));
+        if (options.persist !== false) {
+          try {
+            window.localStorage.setItem(
+              ADMIN_CARD_VIEW_MODE_KEY,
+              adminCardViewMode,
+            );
+          } catch (error) {
+            // 瀏覽器封鎖儲存時仍可在本次頁面使用。
+          }
+        }
+        syncAdminCardViewControls();
+        return true;
+      }
+
+      function initializeAdminCardViewMode() {
+        return setAdminCardViewMode(getSavedAdminCardViewMode(), {
+          force: true,
+          persist: false,
+        });
+      }
+
+      function toggleAdminCardViewExpanded(card) {
+        if (!card || adminCardViewMode === "full") return false;
+        if (
+          card.classList.contains("is-view-expanded") &&
+          adminCardHasBlockingWork(card)
+        ) {
+          const status = document.getElementById("adminCardViewStatus");
+          if (status) {
+            status.classList.add("is-warning");
+            status.innerText = "請先完成或取消這張訂單的編輯／處理";
+          }
+          return false;
+        }
+        card.classList.toggle("is-view-expanded");
+        syncAdminCardExpandButton(card);
+        return true;
+      }
+
+      function ensureAdminCardExpandedForEditing(card) {
+        if (!card || adminCardViewMode === "full") return;
+        card.classList.add("is-view-expanded");
+        syncAdminCardExpandButton(card);
+      }
+
       function setOperationText(card, selector, value) {
         const target = card.querySelector(selector);
         if (target) target.innerText = value;
@@ -8490,6 +8855,12 @@
               </div>
             </details>
             </div>
+            <button
+              type="button"
+              class="admin-card-view-expand"
+              aria-expanded="false"
+              onclick="toggleAdminCardViewExpanded(this.closest('.card'))"
+            >展開處理</button>
             ${
               shouldShowOrderChangeAlert
                 ? `
@@ -8992,6 +9363,7 @@
         const host = card.querySelector(".admin-content-editor-host");
 
         if (!order || !host || status === "已取消") return;
+        ensureAdminCardExpandedForEditing(card);
         if (!shippedOnly && !adminProductsReady) {
           alert(
             "商品目錄尚未就緒，暫時無法安全編輯訂單內容；請重新整理後再試。",
@@ -9631,6 +10003,8 @@
           window.alert("請先完成或取消此筆既有訂單流程操作。");
           return;
         }
+
+        ensureAdminCardExpandedForEditing(card);
 
         const textarea = editor.querySelector(".admin-note-textarea");
         if (textarea) textarea.value = editor.dataset.baselineNote || "";
@@ -14047,6 +14421,7 @@
 
       // 頁面初始化
       window.addEventListener("DOMContentLoaded", async () => {
+        initializeAdminCardViewMode();
         const retryBtn = document.getElementById("adminAuthRetryBtn");
         const refreshBtn = document.getElementById("adminAuthRefreshBtn");
         const closeBtn = document.getElementById("adminAuthCloseBtn");
@@ -14889,6 +15264,7 @@
               .map((card) => buildAdminOrderCardHtml(card.order))
               .join("")
           : `<div class="status-msg">目前沒有符合條件的訂單</div>`;
+        syncAdminCardViewControls();
         updateAdminPagination(totalCount);
         cleanupSelectedOrderNos(true);
         syncBatchSelectionUi();
@@ -15387,6 +15763,7 @@
       function enterCustomerEditMode(cardId) {
         const card = document.getElementById(cardId);
         if (!card) return;
+        ensureAdminCardExpandedForEditing(card);
         card._customerEditSnapshot = captureCustomerEditSnapshot(card);
 
         const name = card.querySelector(".name")?.innerText.trim() || "";
