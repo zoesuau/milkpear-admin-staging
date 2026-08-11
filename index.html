@@ -5902,12 +5902,12 @@
       let adminNotificationSkipCard = null;
       let adminNotificationSkipSubmitting = false;
       const ADMIN_ORDERS_PER_PAGE = 20;
-      const ADMIN_CARD_VIEW_MODE_KEY = "milkpearAdminCardViewModeV1";
+      const ADMIN_CARD_VIEW_MODE_KEY = "milkpearAdminCardViewModeV2";
       const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
-      let adminCardViewMode = "compact";
+      let adminCardViewMode = "full";
       let currentAdminName =
         String(sessionStorage.getItem(ADMIN_DISPLAY_NAME_KEY) || "").trim() ||
         "後台管理員";
@@ -7631,7 +7631,7 @@
 
       function normalizeAdminCardViewMode(mode) {
         const normalized = String(mode || "").trim().toLowerCase();
-        return ADMIN_CARD_VIEW_MODES.has(normalized) ? normalized : "compact";
+        return ADMIN_CARD_VIEW_MODES.has(normalized) ? normalized : "full";
       }
 
       function getSavedAdminCardViewMode() {
@@ -7640,7 +7640,7 @@
             window.localStorage.getItem(ADMIN_CARD_VIEW_MODE_KEY),
           );
         } catch (error) {
-          return "compact";
+          return "full";
         }
       }
 
@@ -7709,17 +7709,27 @@
         const listScroll = document.getElementById("adminCardListScroll");
         if (!card || !listScroll) return;
         card.dataset.listScrollLeft = String(listScroll.scrollLeft || 0);
+        card.dataset.listPageScrollY = String(
+          window.scrollY || window.pageYOffset || 0,
+        );
       }
 
       function restoreAdminCardListPosition(card) {
         if (!card || adminCardViewMode !== "list") return;
         const listScroll = document.getElementById("adminCardListScroll");
         const savedScrollLeft = Number(card.dataset.listScrollLeft || 0);
+        const savedPageScrollY = Number(card.dataset.listPageScrollY || 0);
         delete card.dataset.listScrollLeft;
-        window.requestAnimationFrame(() => {
+        delete card.dataset.listPageScrollY;
+        const restorePosition = () => {
           if (listScroll) listScroll.scrollLeft = savedScrollLeft;
-          const row = card.querySelector(":scope > .admin-card-list-summary");
-          (row || card).scrollIntoView({ behavior: "smooth", block: "center" });
+          window.scrollTo(window.scrollX || 0, savedPageScrollY);
+        };
+        window.requestAnimationFrame(() => {
+          window.requestAnimationFrame(() => {
+            restorePosition();
+            window.setTimeout(restorePosition, 0);
+          });
         });
       }
 
