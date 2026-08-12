@@ -7,6 +7,7 @@
       content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"
     />
     <title>出貨後台</title>
+    <script src="./customer-config.js?v=20260812-config-1"></script>
     <link
       rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@7.3.1/css/all.min.css"
@@ -5166,7 +5167,7 @@
         <div class="shipping-manifest-header">
           <div>
             <div class="shipping-manifest-title" id="shippingManifestTitle">
-              三合院農園｜出貨總表
+              商店｜出貨總表
             </div>
             <div
               class="shipping-manifest-subtitle"
@@ -5182,7 +5183,7 @@
             onclick="printShippingManifest()"
             disabled
           >
-            ④列印三合院出貨總表
+            ④列印出貨總表
           </button>
         </div>
         <div
@@ -5289,7 +5290,7 @@
               <div class="product-banner-preview">
                 <img
                   id="productBannerPreview"
-                  src="assets/sanheyuan-banner.png"
+                  src="assets/banner.png"
                   alt="前台廣告圖預覽"
                   onerror="
                     this.style.display = 'none';
@@ -5982,16 +5983,31 @@
       // ── 基礎變數 ──
       const adminLegacySendButton = document.getElementById("sendBtn");
       const adminLegacyStatusMessage = document.getElementById("statusMsg");
-      const GAS_ORDERS_API_URL =
-        "https://script.google.com/macros/s/AKfycby9r7QgpvOJ7KP_3uVI9eYHkzeJnPVFhP7Z3uQdQBvMogYglPoim79H3HJpjyUAgW57/exec";
-      const LINE_LOGIN_CHANNEL_ID = "2010484376";
-      const ADMIN_AUTH_REDIRECT_URI =
-        "https://zoesuau.github.io/milkpear-admin-system";
-      const ADMIN_LINE_STATE_KEY = "milkpear_admin_line_state";
-      const ADMIN_LINE_NONCE_KEY = "milkpear_admin_line_nonce";
-      const ADMIN_LINE_CODE_VERIFIER_KEY = "milkpear_admin_line_code_verifier";
-      const ADMIN_LINE_SESSION_TOKEN_KEY = "milkpear_admin_session_token";
-      const ADMIN_DISPLAY_NAME_KEY = "milkpear_admin_display_name";
+      const ORDER_SYSTEM_CONFIG = window.ORDER_SYSTEM_CONFIG;
+      if (!ORDER_SYSTEM_CONFIG) {
+        throw new Error("ORDER_SYSTEM_CONFIG_MISSING");
+      }
+      document.title = ORDER_SYSTEM_CONFIG.adminSiteTitle || "出貨後台";
+      const ADMIN_BRAND_NAME = String(
+        ORDER_SYSTEM_CONFIG.brandName || "商店",
+      );
+      const GAS_ORDERS_API_URL = String(ORDER_SYSTEM_CONFIG.gasApiUrl || "");
+      const LINE_LOGIN_CHANNEL_ID = String(
+        ORDER_SYSTEM_CONFIG.line?.loginChannelId || "",
+      );
+      const ADMIN_AUTH_REDIRECT_URI = String(
+        ORDER_SYSTEM_CONFIG.adminSiteUrl || "",
+      );
+      const ADMIN_STORAGE_NAMESPACE = [
+        ORDER_SYSTEM_CONFIG.productId,
+        ORDER_SYSTEM_CONFIG.customerId,
+        ORDER_SYSTEM_CONFIG.environment,
+      ].join(":");
+      const ADMIN_LINE_STATE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-state`;
+      const ADMIN_LINE_NONCE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-nonce`;
+      const ADMIN_LINE_CODE_VERIFIER_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-code-verifier`;
+      const ADMIN_LINE_SESSION_TOKEN_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-session-token`;
+      const ADMIN_DISPLAY_NAME_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-display-name`;
       const ADMIN_AUTH_TIMEOUT_MS = 60000;
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
@@ -6002,7 +6018,8 @@
       let adminProductCatalog = [];
       let adminProductCatalogVersion = "";
       let adminSiteSettings = {
-        bannerImageUrl: "assets/sanheyuan-banner.png",
+        bannerImageUrl:
+          ORDER_SYSTEM_CONFIG.assets?.bannerImageUrl || "assets/banner.png",
       };
       let adminShippingBatches = [];
       let adminShippingBatchesLoaded = false;
@@ -6038,7 +6055,7 @@
       let adminNotificationSkipCard = null;
       let adminNotificationSkipSubmitting = false;
       const ADMIN_ORDERS_PER_PAGE = 20;
-      const ADMIN_CARD_VIEW_MODE_KEY = "milkpearAdminCardViewModeV2";
+      const ADMIN_CARD_VIEW_MODE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-card-view-mode-v2`;
       const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
@@ -6047,6 +6064,10 @@
       let currentAdminName =
         String(sessionStorage.getItem(ADMIN_DISPLAY_NAME_KEY) || "").trim() ||
         "後台管理員";
+      document.getElementById("shippingManifestTitle").textContent =
+        `${ADMIN_BRAND_NAME}｜出貨總表`;
+      document.getElementById("shippingManifestPrintButton").textContent =
+        `④列印${ADMIN_BRAND_NAME}出貨總表`;
       let currentFilterStatus = "全部";
       let currentDateFilter = "全部";
       let currentNotificationFilter = "全部";
@@ -7155,9 +7176,16 @@
       function renderProductBannerSettings() {
         const preview = document.getElementById("productBannerPreview");
         const bannerUrl = String(
-          adminSiteSettings?.bannerImageUrl || "assets/sanheyuan-banner.png",
+          adminSiteSettings?.bannerImageUrl ||
+            ORDER_SYSTEM_CONFIG.assets?.bannerImageUrl ||
+            "assets/banner.png",
         ).trim();
-        if (preview) preview.src = bannerUrl || "assets/sanheyuan-banner.png";
+        if (preview) {
+          preview.src =
+            bannerUrl ||
+            ORDER_SYSTEM_CONFIG.assets?.bannerImageUrl ||
+            "assets/banner.png";
+        }
       }
 
       function previewSelectedProductBannerFile() {
