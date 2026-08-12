@@ -6026,6 +6026,9 @@
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
+      const ADMIN_CREATE_CHECK_TIMEOUT_MS = 15000;
+      const ADMIN_CREATE_AUTO_CHECK_DELAYS_MS = [0, 2500, 6000];
+      const ADMIN_CREATE_PENDING_STORAGE_KEY = `${ADMIN_STORAGE_NAMESPACE}:pending-admin-create-v1`;
       const ADMIN_SHIPPING_NOTICE_TIMEOUT_MS = 60000;
       const ADMIN_INITIAL_LOAD_SLOW_MS = 12000;
 
@@ -6056,6 +6059,7 @@
       let adminBackgroundRefreshTimer = null;
       let adminBackgroundRefreshRequestId = 0;
       let adminCreateOrderSubmitting = false;
+      let adminCreateOrderChecking = false;
       let adminCreateRequestContext = null;
       let adminSelectedCustomer = null;
       let adminCustomerSearchTimer = null;
@@ -6258,6 +6262,36 @@
           requestKey: createAdminRequestKey("adminCreateOrder", [nonce]),
         };
         return adminCreateRequestContext;
+      }
+
+      function loadPendingAdminCreateRequest() {
+        try {
+          const parsed = JSON.parse(
+            sessionStorage.getItem(ADMIN_CREATE_PENDING_STORAGE_KEY) || "null",
+          );
+          const requestKey = String(parsed?.requestKey || "").trim();
+          if (!/^[A-Za-z0-9_|-]{16,160}$/.test(requestKey)) return null;
+          return {
+            requestKey,
+            submittedAt: Math.max(0, Number(parsed?.submittedAt) || 0),
+          };
+        } catch (error) {
+          return null;
+        }
+      }
+
+      function storePendingAdminCreateRequest(requestKey) {
+        sessionStorage.setItem(
+          ADMIN_CREATE_PENDING_STORAGE_KEY,
+          JSON.stringify({
+            requestKey: String(requestKey || "").trim(),
+            submittedAt: Date.now(),
+          }),
+        );
+      }
+
+      function clearPendingAdminCreateRequest() {
+        sessionStorage.removeItem(ADMIN_CREATE_PENDING_STORAGE_KEY);
       }
 
       function clearAdminAuthSession() {
@@ -15474,6 +15508,7 @@
           updateNotifyButton();
           applyReadOnlyModeToRealOrders();
           hideAdminAuthOverlay();
+          await recoverPendingAdminCreateOrderOnLoad();
         } finally {
           initialLoadFinished = true;
           window.clearTimeout(initialLoadTimer);
@@ -17863,8 +17898,158 @@ ${adminNote}
         updateNewOrderAmountPreview();
       }
 
+      function finishAdminCreateOrder(result, feedback, submitButton) {
+        const createdOrderNo = String(result?.created?.orderNo || "").trim();
+        if (
+          !createdOrderNo ||
+          !result?.order ||
+          String(result.order.orderNo || "").trim() !== createdOrderNo
+        ) {
+          throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
+        }
+
+        adminCreateRequestContext = null;
+        adminCreateOrderChecking = false;
+        clearPendingAdminCreateRequest();
+        if (
+          !applySingleOrderResponse(result.order, null, {
+            refreshInBackground: false,
+          })
+        ) {
+          throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
+        }
+
+        adminCreateOrderSubmitting = false;
+        closeAddOrderModal();
+        updateStatsCounters();
+        applyCurrentFilter();
+        handleBatchCheckChange();
+        updateNotifyButton();
+        applyReadOnlyModeToRealOrders();
+        scrollAdminOrderCardIntoView(createdOrderNo);
+        setAdminRefreshState(false, `✅ 訂單 ${createdOrderNo} 已建立`);
+        return true;
+      }
+
+      async function checkPendingAdminCreateOrder(options = {}) {
+        const feedback =
+          options.feedback || document.getElementById("new-order-feedback");
+        const submitButton =
+          options.submitButton || document.getElementById("new-order-submit");
+        const pending = loadPendingAdminCreateRequest();
+        const requestKey = String(
+          pending?.requestKey || adminCreateRequestContext?.requestKey || "",
+        ).trim();
+
+        if (!requestKey) {
+          adminCreateOrderChecking = false;
+          adminCreateOrderSubmitting = false;
+          if (submitButton) {
+            submitButton.disabled = false;
+            submitButton.innerText = "建立訂單";
+          }
+          if (feedback) {
+            feedback.className = "admin-content-feedback is-error";
+            feedback.innerText = "找不到待查核的建單識別碼，請重新整理訂單列表後搜尋。";
+          }
+          return false;
+        }
+
+        adminCreateOrderChecking = true;
+        adminCreateOrderSubmitting = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.innerText = "正在確認訂單結果…";
+        }
+        if (feedback) {
+          feedback.className = "admin-content-feedback";
+          feedback.innerText = "系統正在查詢原本的建單結果，不會再次建立或重扣庫存。";
+        }
+
+        let lastStatus = "not_found";
+        let sessionExpired = false;
+        for (const delayMs of ADMIN_CREATE_AUTO_CHECK_DELAYS_MS) {
+          if (delayMs > 0) {
+            await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+          }
+          try {
+            const response = await fetchWithTimeout(
+              GAS_ORDERS_API_URL,
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "text/plain;charset=utf-8",
+                },
+                body: JSON.stringify({
+                  action: "adminCheckCreateOrderResult",
+                  adminSessionToken: String(
+                    sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+                  ).trim(),
+                  requestKey,
+                }),
+              },
+              ADMIN_CREATE_CHECK_TIMEOUT_MS,
+            );
+            const result = await response.json();
+            if (
+              result?.action === "adminCheckCreateOrderResult" &&
+              result?.errorCode === "ADMIN_SESSION_REQUIRED"
+            ) {
+              sessionExpired = true;
+              sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+              showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+              break;
+            }
+            if (
+              !response.ok ||
+              result?.ok !== true ||
+              result?.action !== "adminCheckCreateOrderResult"
+            ) {
+              continue;
+            }
+            lastStatus = String(result.status || "");
+            if (lastStatus === "completed") {
+              return finishAdminCreateOrder(result, feedback, submitButton);
+            }
+            if (lastStatus === "indeterminate") break;
+          } catch (error) {
+            // 查核是只讀操作；短暫斷線時由下一次查核接手。
+          }
+        }
+
+        adminCreateOrderSubmitting = false;
+        adminCreateOrderChecking = true;
+        if (submitButton) {
+          submitButton.disabled = sessionExpired;
+          submitButton.innerText = sessionExpired
+            ? "請先重新登入"
+            : "重新查核建立結果";
+        }
+        const unresolvedMessage =
+          lastStatus === "indeterminate"
+            ? "訂單結果無法自動確認。請重新整理後以客戶電話搜尋，請勿重新建立。"
+            : "連線仍未恢復，系統沒有重新建單。可稍後再按「重新查核建立結果」。";
+        if (feedback) {
+          feedback.className = "admin-content-feedback is-error";
+          feedback.innerText = unresolvedMessage;
+        }
+        if (options.fromPageLoad === true) {
+          setAdminRefreshState(false, `⚠️ ${unresolvedMessage}`);
+        }
+        return false;
+      }
+
+      async function recoverPendingAdminCreateOrderOnLoad() {
+        if (!loadPendingAdminCreateRequest()) return false;
+        return checkPendingAdminCreateOrder({ fromPageLoad: true });
+      }
+
       async function handleNewOrderSubmit(event) {
         event.preventDefault();
+        if (adminCreateOrderChecking || loadPendingAdminCreateRequest()) {
+          await checkPendingAdminCreateOrder();
+          return;
+        }
         if (!adminProductsReady || adminCreateOrderSubmitting) return;
 
         const feedback = document.getElementById("new-order-feedback");
@@ -17955,6 +18140,8 @@ ${adminNote}
         }
 
         adminCreateOrderSubmitting = true;
+        adminCreateOrderChecking = false;
+        storePendingAdminCreateRequest(payload.requestKey);
         submitButton.disabled = true;
         submitButton.innerText = "建立中…";
         feedback.className = "admin-content-feedback";
@@ -17995,30 +18182,7 @@ ${adminNote}
             throw createError;
           }
 
-          const createdOrderNo = String(result.created.orderNo).trim();
-          adminCreateRequestContext = null;
-          if (
-            !result.order ||
-            String(result.order.orderNo || "").trim() !== createdOrderNo
-          ) {
-            throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
-          }
-          if (
-            !applySingleOrderResponse(result.order, null, {
-              refreshInBackground: false,
-            })
-          ) {
-            throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
-          }
-
-          adminCreateOrderSubmitting = false;
-          closeAddOrderModal();
-          updateStatsCounters();
-          applyCurrentFilter();
-          handleBatchCheckChange();
-          updateNotifyButton();
-          applyReadOnlyModeToRealOrders();
-          scrollAdminOrderCardIntoView(createdOrderNo);
+          finishAdminCreateOrder(result, feedback, submitButton);
         } catch (error) {
           feedback.className = "admin-content-feedback is-error";
           if (error.message === "ORDER_CREATE_LOCAL_UPDATE_FAILED") {
@@ -18033,12 +18197,17 @@ ${adminNote}
             error?.message === "ORDER_CREATE_INDETERMINATE"
           ) {
             adminCreateOrderSubmitting = false;
-            submitButton.disabled = false;
-            submitButton.innerText = "查核建立結果";
-            feedback.innerText =
-              "連線中斷，訂單可能已建立。請按「查核建立結果」一次；系統會使用同一識別碼查詢，不會重複建立或重扣庫存。";
+            adminCreateOrderChecking = true;
+            await checkPendingAdminCreateOrder({
+              feedback,
+              submitButton,
+              automatic: true,
+            });
             return;
           }
+          clearPendingAdminCreateRequest();
+          adminCreateRequestContext = null;
+          adminCreateOrderChecking = false;
           adminCreateOrderSubmitting = false;
           submitButton.disabled = false;
           submitButton.innerText = "建立訂單";
