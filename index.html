@@ -76,6 +76,54 @@
         color: #b91c1c;
       }
 
+      .admin-order-sync-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .admin-order-sync-row .gas-test-status {
+        flex: 1;
+      }
+
+      .admin-order-sync-retry {
+        flex: 0 0 auto;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid #4f7f63;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #356448;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .admin-order-sync-retry.hidden {
+        display: none;
+      }
+
+      body.admin-orders-write-locked .btn-add-order-trigger,
+      body.admin-orders-write-locked #global-selectAll,
+      body.admin-orders-write-locked #batchShippedBtn,
+      body.admin-orders-write-locked #cards-container .card button:not(.admin-card-view-expand),
+      body.admin-orders-write-locked #cards-container .card input,
+      body.admin-orders-write-locked #cards-container .card select,
+      body.admin-orders-write-locked #cards-container .card textarea {
+        cursor: not-allowed !important;
+        opacity: 0.5;
+      }
+
+      body.admin-orders-write-locked #statusFilterRow,
+      body.admin-orders-write-locked #dateFilterRow,
+      body.admin-orders-write-locked #notificationFilterRow,
+      body.admin-orders-write-locked #searchBar,
+      body.admin-orders-write-locked .admin-pagination {
+        cursor: wait;
+        opacity: 0.58;
+      }
+
       .admin-auth-overlay {
         position: fixed;
         inset: 0;
@@ -4563,8 +4611,17 @@
         id="adminStatusPanel"
         aria-live="polite"
       >
-        <div class="gas-test-status" id="adminReadStatus">
-          等待管理員完整訂單讀取…
+        <div class="admin-order-sync-row">
+          <div class="gas-test-status" id="adminReadStatus">
+            等待管理員完整訂單讀取…
+          </div>
+          <button
+            type="button"
+            class="admin-order-sync-retry hidden"
+            id="adminOrderSyncRetryBtn"
+          >
+            重新同步
+          </button>
         </div>
         <div class="gas-test-status" id="adminProductCatalogStatus">
           等待管理員商品目錄讀取…
@@ -6030,7 +6087,6 @@
       const ADMIN_CREATE_AUTO_CHECK_DELAYS_MS = [0, 2500, 6000];
       const ADMIN_CREATE_PENDING_STORAGE_KEY = `${ADMIN_STORAGE_NAMESPACE}:pending-admin-create-v1`;
       const ADMIN_SHIPPING_NOTICE_TIMEOUT_MS = 60000;
-      const ADMIN_INITIAL_LOAD_SLOW_MS = 12000;
 
       let adminProductCatalog = [];
       let adminProductCatalogVersion = "";
@@ -6058,6 +6114,10 @@
       let adminOrderSearchRequestId = 0;
       let adminBackgroundRefreshTimer = null;
       let adminBackgroundRefreshRequestId = 0;
+      let adminFullOrderSyncPromise = null;
+      let adminOrderSyncWorkflowPromise = null;
+      let adminOrderSyncState = "idle";
+      let adminOrdersWriteLocked = true;
       let adminCreateOrderSubmitting = false;
       let adminCreateOrderChecking = false;
       let adminCreateRequestContext = null;
@@ -8176,6 +8236,54 @@
         setAdminRefreshState(false, `最後更新：${formatOperationTime(date)}`);
       }
 
+      function setAdminOrderSyncState(state, message = "") {
+        adminOrderSyncState = String(state || "idle");
+        adminOrdersWriteLocked = adminOrderSyncState !== "ready";
+        document.body.classList.toggle(
+          "admin-orders-write-locked",
+          adminOrdersWriteLocked,
+        );
+        const status = document.getElementById("adminReadStatus");
+        const retry = document.getElementById("adminOrderSyncRetryBtn");
+        if (status) {
+          status.className = `gas-test-status${adminOrderSyncState === "failed" ? " error" : ""}`;
+          status.innerText = message;
+        }
+        if (retry) retry.classList.toggle("hidden", adminOrderSyncState !== "failed");
+        setAdminStatusPanelVisible(Boolean(message));
+        syncBatchSelectionUi(true);
+      }
+
+      function isAdminOrderWriteTarget(target) {
+        return !!target?.closest?.(
+          [
+            ".btn-add-order-trigger",
+            "#global-selectAll",
+            "#batchShippedBtn",
+            "#cards-container .card button:not(.admin-card-view-expand)",
+            "#cards-container .card input",
+            "#cards-container .card select",
+            "#cards-container .card textarea",
+            "#statusFilterRow button",
+            "#dateFilterRow button",
+            "#dateFilterRow input",
+            "#notificationFilterRow button",
+            "#searchBar",
+            ".admin-pagination button",
+          ].join(","),
+        );
+      }
+
+      function guardAdminOrderWritesWhileSyncing(event) {
+        if (!adminOrdersWriteLocked || !isAdminOrderWriteTarget(event.target)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        setAdminRefreshState(
+          false,
+          "完整訂單尚未同步完成，目前可查看前 20 筆；完成後即可篩選與操作。",
+        );
+      }
+
       function hasBlockingAdminRefreshWork() {
         if (adminBatchProcessing || adminCreateOrderSubmitting) return true;
         return !!document.querySelector(
@@ -8681,8 +8789,9 @@
         return { dateStart: "", dateEnd: "" };
       }
 
-      async function fetchAdminOrdersFromGas(options = {}) {
+      async function performAdminOrdersFetchFromGas(options = {}) {
         const silent = options && options.silent === true;
+        const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
         const adminReadStatusEl = document.getElementById("adminReadStatus");
 
         try {
@@ -8711,7 +8820,16 @@
               body: JSON.stringify({
                 action: "adminReadOrders",
                 adminSessionToken,
-                viewMode: "complete",
+                viewMode,
+                query: String(options?.query || ""),
+                statusFilter: String(options?.statusFilter || "全部"),
+                notificationFilter: String(
+                  options?.notificationFilter || "全部",
+                ),
+                dateStart: String(options?.dateStart || ""),
+                dateEnd: String(options?.dateEnd || ""),
+                page: Math.max(1, Number(options?.page) || 1),
+                pageSize: ADMIN_ORDERS_PER_PAGE,
               }),
             },
             ADMIN_READ_ORDERS_TIMEOUT_MS,
@@ -8806,6 +8924,68 @@
         }
       }
 
+      function fetchAdminOrdersFromGas(options = {}) {
+        const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
+        if (viewMode !== "complete") {
+          return performAdminOrdersFetchFromGas({ ...options, viewMode });
+        }
+        if (adminFullOrderSyncPromise) return adminFullOrderSyncPromise;
+        adminFullOrderSyncPromise = performAdminOrdersFetchFromGas({
+          ...options,
+          viewMode: "complete",
+        }).finally(() => {
+          adminFullOrderSyncPromise = null;
+        });
+        return adminFullOrderSyncPromise;
+      }
+
+      async function performAdminFullOrderSync(options = {}) {
+        setAdminOrderSyncState(
+          "syncing",
+          options.initial === true
+            ? "已顯示最新 20 筆，完整訂單正在背景同步；完成前僅供查看。"
+            : "完整訂單正在重新同步；完成前僅供查看。",
+        );
+        const adminOrders = await fetchAdminOrdersFromGas({ silent: true });
+        if (!Array.isArray(adminOrders)) {
+          setAdminOrderSyncState(
+            "failed",
+            "目前保留已載入的訂單供查看；完整同步失敗，請稍後重新同步。",
+          );
+          return false;
+        }
+        if (!renderAdminOrders(adminOrders)) {
+          setAdminOrderSyncState(
+            "failed",
+            "訂單資料已回傳但畫面更新失敗，請重新同步。",
+          );
+          return false;
+        }
+        updateStatsCounters();
+        applyCurrentFilter();
+        handleBatchCheckChange();
+        updateNotifyButton();
+        applyReadOnlyModeToRealOrders();
+        setAdminOrderSyncState("ready", "");
+        updateAdminRefreshMeta();
+        if (options.recoverPendingCreate === true) {
+          await recoverPendingAdminCreateOrderOnLoad();
+        }
+        return true;
+      }
+
+      function syncAdminFullOrders(options = {}) {
+        if (adminOrderSyncWorkflowPromise) {
+          return adminOrderSyncWorkflowPromise;
+        }
+        adminOrderSyncWorkflowPromise = performAdminFullOrderSync(
+          options,
+        ).finally(() => {
+          adminOrderSyncWorkflowPromise = null;
+        });
+        return adminOrderSyncWorkflowPromise;
+      }
+
       async function loadAdminOrdersForCurrentView(options = {}) {
         const page = Math.max(1, Number(options?.page ?? adminCurrentPage) || 1);
         adminCurrentPage = page;
@@ -8825,27 +9005,7 @@
           return;
         }
 
-        setAdminRefreshState(true, "正在重新整理訂單...");
-        const requestId = ++adminOrderQueryRequestId;
-        const adminOrders = await fetchAdminOrdersFromGas();
-        if (requestId !== adminOrderQueryRequestId) return;
-        if (!Array.isArray(adminOrders)) {
-          setAdminRefreshState(false, "重新整理失敗，請稍後再試。");
-          return;
-        }
-
-        if (!renderAdminOrders(adminOrders)) {
-          setAdminRefreshState(false, "重新整理失敗，請稍後再試。");
-          return;
-        }
-
-        updateStatsCounters();
-        syncAdminSearchMatches();
-        applyCurrentFilter();
-        handleBatchCheckChange();
-        updateNotifyButton();
-        applyReadOnlyModeToRealOrders();
-        updateAdminRefreshMeta();
+        await syncAdminFullOrders();
       }
 
       function reloadAdminPage() {
@@ -8864,10 +9024,8 @@
       async function refreshAdminOrdersFromOverlay() {
         setAdminRefreshState(true, "正在重新讀取訂單...");
         showAdminAuthOverlay("正在重新讀取訂單...", false, true, true);
-        const requestId = ++adminOrderQueryRequestId;
-        const adminOrders = await fetchAdminOrdersFromGas();
-        if (requestId !== adminOrderQueryRequestId) return;
-        if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
+        const synced = await syncAdminFullOrders();
+        if (!synced) {
           setAdminRefreshState(false, "重新讀取失敗，請稍後再試。");
           showAdminAuthOverlay(
             "⚠️ 管理員完整訂單讀取失敗，請稍後再試。",
@@ -8876,14 +9034,6 @@
           );
           return;
         }
-
-        updateStatsCounters();
-        syncAdminSearchMatches();
-        applyCurrentFilter();
-        handleBatchCheckChange();
-        updateNotifyButton();
-        applyReadOnlyModeToRealOrders();
-        updateAdminRefreshMeta();
         hideAdminAuthOverlay();
       }
       window.refreshAdminOrdersFromOverlay = refreshAdminOrdersFromOverlay;
@@ -15383,6 +15533,26 @@
         initializeAdminCardViewMode();
         window.addEventListener("offline", handleAdminCreateNetworkOffline);
         window.addEventListener("online", handleAdminCreateNetworkRestored);
+        document.addEventListener(
+          "click",
+          guardAdminOrderWritesWhileSyncing,
+          true,
+        );
+        document.addEventListener(
+          "change",
+          guardAdminOrderWritesWhileSyncing,
+          true,
+        );
+        document.addEventListener(
+          "beforeinput",
+          guardAdminOrderWritesWhileSyncing,
+          true,
+        );
+        document.addEventListener(
+          "keydown",
+          guardAdminOrderWritesWhileSyncing,
+          true,
+        );
         const retryBtn = document.getElementById("adminAuthRetryBtn");
         const refreshBtn = document.getElementById("adminAuthRefreshBtn");
         const closeBtn = document.getElementById("adminAuthCloseBtn");
@@ -15404,6 +15574,11 @@
         if (closeBtn) {
           closeBtn.addEventListener("click", hideAdminAuthOverlay);
         }
+        document
+          .getElementById("adminOrderSyncRetryBtn")
+          ?.addEventListener("click", () => {
+            void syncAdminFullOrders();
+          });
         document
           .getElementById("adminRefreshOrdersBtn")
           ?.addEventListener("click", refreshAdminOrdersManually);
@@ -15512,46 +15687,43 @@
           return;
         }
 
-        let initialLoadFinished = false;
-        const initialLoadTimer = window.setTimeout(() => {
-          if (initialLoadFinished) return;
+        const productCatalogPromise = fetchAdminProductCatalogFromGas();
+        const initialOrders = await fetchAdminOrdersFromGas({
+          silent: true,
+          viewMode: "filtered",
+          statusFilter: "全部",
+          notificationFilter: "全部",
+          page: 1,
+        });
+
+        if (!Array.isArray(initialOrders) || !renderAdminOrders(initialOrders)) {
+          if (
+            !String(
+              sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+            ).trim()
+          ) {
+            await productCatalogPromise;
+            return;
+          }
           showAdminAuthOverlay(
-            "讀取訂單時間較久，網路不穩時可先按下方重新讀取訂單。",
+            "⚠️ 訂單讀取暫時失敗，請按下方重新讀取訂單。",
             false,
             true,
           );
-        }, ADMIN_INITIAL_LOAD_SLOW_MS);
-
-        const productCatalogPromise = fetchAdminProductCatalogFromGas();
-        try {
-          const adminOrders = await fetchAdminOrdersFromGas();
-
-          if (!Array.isArray(adminOrders)) {
-            return;
-          }
-
-          const rendered = renderAdminOrders(adminOrders);
-
-          if (!rendered) {
-            showAdminAuthOverlay(
-              "⚠️ 管理員訂單顯示失敗，請按下方重新讀取訂單。",
-              false,
-              true,
-            );
-            return;
-          }
-
-          updateStatsCounters();
-          applyCurrentFilter();
-          handleBatchCheckChange();
-          updateNotifyButton();
-          applyReadOnlyModeToRealOrders();
-          hideAdminAuthOverlay();
-          await recoverPendingAdminCreateOrderOnLoad();
-        } finally {
-          initialLoadFinished = true;
-          window.clearTimeout(initialLoadTimer);
+          await productCatalogPromise;
+          return;
         }
+
+        updateStatsCounters();
+        applyCurrentFilter();
+        handleBatchCheckChange();
+        updateNotifyButton();
+        applyReadOnlyModeToRealOrders();
+        hideAdminAuthOverlay();
+        void syncAdminFullOrders({
+          initial: true,
+          recoverPendingCreate: true,
+        });
         await productCatalogPromise;
       });
       // ==========================================
@@ -17143,13 +17315,17 @@ ${adminNote}
                 String(checkbox.dataset.orderNo || "").trim(),
               );
             checkbox.disabled =
-              adminBatchProcessing || checkbox.dataset.batchEligible !== "true";
+              adminOrdersWriteLocked ||
+              adminBatchProcessing ||
+              checkbox.dataset.batchEligible !== "true";
           });
 
         const selectAll = document.getElementById("global-selectAll");
         if (selectAll) {
           selectAll.disabled =
-            adminBatchProcessing || visibleCheckboxes.length === 0;
+            adminOrdersWriteLocked ||
+            adminBatchProcessing ||
+            visibleCheckboxes.length === 0;
           selectAll.checked =
             visibleCheckboxes.length > 0 &&
             visibleSelectedCount === visibleCheckboxes.length;
@@ -17166,7 +17342,8 @@ ${adminNote}
           batchShippedBtn.innerText = adminBatchProcessing
             ? "處理中…"
             : `標記已寄出並通知（${count}）`;
-          batchShippedBtn.disabled = adminBatchProcessing || !shippedEligible;
+          batchShippedBtn.disabled =
+            adminOrdersWriteLocked || adminBatchProcessing || !shippedEligible;
           batchShippedBtn.classList.toggle(
             "enabled",
             !batchShippedBtn.disabled,
