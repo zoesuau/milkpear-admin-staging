@@ -104,26 +104,6 @@
         display: none;
       }
 
-      body.admin-orders-write-locked .btn-add-order-trigger,
-      body.admin-orders-write-locked #global-selectAll,
-      body.admin-orders-write-locked #batchShippedBtn,
-      body.admin-orders-write-locked #cards-container .card button:not(.admin-card-view-expand),
-      body.admin-orders-write-locked #cards-container .card input,
-      body.admin-orders-write-locked #cards-container .card select,
-      body.admin-orders-write-locked #cards-container .card textarea {
-        cursor: not-allowed !important;
-        opacity: 0.5;
-      }
-
-      body.admin-orders-write-locked #statusFilterRow,
-      body.admin-orders-write-locked #dateFilterRow,
-      body.admin-orders-write-locked #notificationFilterRow,
-      body.admin-orders-write-locked #searchBar,
-      body.admin-orders-write-locked .admin-pagination {
-        cursor: wait;
-        opacity: 0.58;
-      }
-
       .admin-auth-overlay {
         position: fixed;
         inset: 0;
@@ -4649,7 +4629,7 @@
             class="admin-order-sync-retry hidden"
             id="adminOrderSyncRetryBtn"
           >
-            重新同步
+            重新載入本頁
           </button>
         </div>
         <div class="gas-test-status" id="adminProductCatalogStatus">
@@ -6136,10 +6116,7 @@
       let adminOrderSearchRequestId = 0;
       let adminBackgroundRefreshTimer = null;
       let adminBackgroundRefreshRequestId = 0;
-      let adminFullOrderSyncPromise = null;
-      let adminOrderSyncWorkflowPromise = null;
-      let adminOrderSyncState = "idle";
-      let adminOrdersWriteLocked = true;
+      let adminOrderViewLoading = false;
       let adminCreateOrderSubmitting = false;
       let adminCreateOrderChecking = false;
       let adminCreateRequestContext = null;
@@ -8264,52 +8241,31 @@
         setAdminRefreshState(false, `最後更新：${formatOperationTime(date)}`);
       }
 
-      function setAdminOrderSyncState(state, message = "") {
-        adminOrderSyncState = String(state || "idle");
-        adminOrdersWriteLocked = adminOrderSyncState !== "ready";
-        document.body.classList.toggle(
-          "admin-orders-write-locked",
-          adminOrdersWriteLocked,
-        );
+      function setAdminOrderViewLoading(loading, message = "", isError = false) {
+        adminOrderViewLoading = loading === true;
         const status = document.getElementById("adminReadStatus");
         const retry = document.getElementById("adminOrderSyncRetryBtn");
         if (status) {
-          status.className = `gas-test-status${adminOrderSyncState === "failed" ? " error" : ""}`;
+          status.className = `gas-test-status${isError ? " error" : ""}`;
           status.innerText = message;
         }
-        if (retry) retry.classList.toggle("hidden", adminOrderSyncState !== "failed");
-        setAdminStatusPanelVisible(Boolean(message));
-        syncBatchSelectionUi(true);
-      }
-
-      function isAdminOrderWriteTarget(target) {
-        return !!target?.closest?.(
-          [
-            ".btn-add-order-trigger",
-            "#global-selectAll",
-            "#batchShippedBtn",
-            "#cards-container .card button:not(.admin-card-view-expand)",
-            "#cards-container .card input",
-            "#cards-container .card select",
-            "#cards-container .card textarea",
-            "#statusFilterRow button",
-            "#dateFilterRow button",
-            "#dateFilterRow input",
-            "#notificationFilterRow button",
-            "#searchBar",
-            ".admin-pagination button",
-          ].join(","),
-        );
-      }
-
-      function guardAdminOrderWritesWhileSyncing(event) {
-        if (!adminOrdersWriteLocked || !isAdminOrderWriteTarget(event.target)) return;
-        event.preventDefault();
-        event.stopImmediatePropagation();
+        if (retry) retry.classList.toggle("hidden", !isError);
+        document
+          .getElementById("cards-container")
+          ?.setAttribute("aria-busy", adminOrderViewLoading ? "true" : "false");
+        document
+          .querySelectorAll(
+            "#statusFilterRow button, #dateFilterRow button, #dateFilterRow input, #notificationFilterRow button, #searchBar",
+          )
+          .forEach((control) => {
+            control.disabled = adminOrderViewLoading;
+          });
         setAdminRefreshState(
-          false,
-          "完整訂單尚未同步完成，目前可查看前 20 筆；完成後即可篩選與操作。",
+          adminOrderViewLoading,
+          adminOrderViewLoading ? "正在載入訂單..." : undefined,
         );
+        setAdminStatusPanelVisible(Boolean(message));
+        updateAdminPagination(adminOrderReadMeta.totalCount);
       }
 
       function hasBlockingAdminRefreshWork() {
@@ -8953,77 +8909,70 @@
       }
 
       function fetchAdminOrdersFromGas(options = {}) {
-        const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
-        if (viewMode !== "complete") {
-          return performAdminOrdersFetchFromGas({ ...options, viewMode });
-        }
-        if (adminFullOrderSyncPromise) return adminFullOrderSyncPromise;
-        adminFullOrderSyncPromise = performAdminOrdersFetchFromGas({
+        const dateRange = getAdminServerDateRange();
+        return performAdminOrdersFetchFromGas({
+          silent: true,
+          viewMode: "filtered",
+          query: String(document.getElementById("searchBar")?.value || "").trim(),
+          statusFilter: currentFilterStatus,
+          notificationFilter: currentNotificationFilter,
+          ...dateRange,
+          page: adminCurrentPage,
           ...options,
-          viewMode: "complete",
-        }).finally(() => {
-          adminFullOrderSyncPromise = null;
         });
-        return adminFullOrderSyncPromise;
-      }
-
-      async function performAdminFullOrderSync(options = {}) {
-        setAdminOrderSyncState(
-          "syncing",
-          options.initial === true
-            ? "已顯示最新 20 筆，完整訂單正在背景同步；完成前僅供查看。"
-            : "完整訂單正在重新同步；完成前僅供查看。",
-        );
-        const adminOrders = await fetchAdminOrdersFromGas({ silent: true });
-        if (!Array.isArray(adminOrders)) {
-          setAdminOrderSyncState(
-            "failed",
-            "目前保留已載入的訂單供查看；完整同步失敗，請稍後重新同步。",
-          );
-          return false;
-        }
-        if (!renderAdminOrders(adminOrders)) {
-          setAdminOrderSyncState(
-            "failed",
-            "訂單資料已回傳但畫面更新失敗，請重新同步。",
-          );
-          return false;
-        }
-        updateStatsCounters();
-        applyCurrentFilter();
-        handleBatchCheckChange();
-        updateNotifyButton();
-        applyReadOnlyModeToRealOrders();
-        setAdminOrderSyncState("ready", "");
-        updateAdminRefreshMeta();
-        if (options.recoverPendingCreate === true) {
-          await recoverPendingAdminCreateOrderOnLoad();
-        }
-        return true;
-      }
-
-      function syncAdminFullOrders(options = {}) {
-        if (adminOrderSyncWorkflowPromise) {
-          return adminOrderSyncWorkflowPromise;
-        }
-        adminOrderSyncWorkflowPromise = performAdminFullOrderSync(
-          options,
-        ).finally(() => {
-          adminOrderSyncWorkflowPromise = null;
-        });
-        return adminOrderSyncWorkflowPromise;
       }
 
       async function loadAdminOrdersForCurrentView(options = {}) {
-        const page = Math.max(1, Number(options?.page ?? adminCurrentPage) || 1);
-        adminCurrentPage = page;
+        if (hasBlockingAdminRefreshWork() && options.allowWhileEditing !== true) {
+          setAdminSearchStatus("目前有訂單正在編輯或處理中，請先儲存或取消。", true);
+          return false;
+        }
+        const requestedPage = Math.max(
+          1,
+          Number(options?.page ?? adminCurrentPage) || 1,
+        );
+        const requestId = ++adminOrderQueryRequestId;
+        const keyword = String(
+          document.getElementById("searchBar")?.value || "",
+        ).trim();
+        const dateRange = getAdminServerDateRange();
+        setAdminOrderViewLoading(
+          true,
+          keyword
+            ? `正在搜尋「${keyword}」…`
+            : requestedPage > 1
+              ? `正在載入第 ${requestedPage} 頁…`
+              : "正在載入訂單…",
+        );
+        const adminOrders = await fetchAdminOrdersFromGas({
+          silent: true,
+          viewMode: "filtered",
+          query: keyword,
+          statusFilter: currentFilterStatus,
+          notificationFilter: currentNotificationFilter,
+          ...dateRange,
+          page: requestedPage,
+        });
+        if (requestId !== adminOrderQueryRequestId) return false;
+        if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
+          setAdminOrderViewLoading(
+            false,
+            "本次訂單載入失敗，原本畫面已保留；可直接重試。",
+            true,
+          );
+          setAdminSearchStatus("載入失敗，請稍後再試。", true);
+          return false;
+        }
         updateStatsCounters();
         applyCurrentFilter();
         handleBatchCheckChange();
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
-        const keyword = String(document.getElementById("searchBar")?.value || "").trim();
-        setAdminSearchStatus(keyword ? `已從完整訂單中找到 ${getFilteredAdminCards().length} 筆。` : "");
+        setAdminOrderViewLoading(false, "");
+        updateAdminRefreshMeta();
+        setAdminSearchStatus(
+          keyword ? `找到 ${adminOrderReadMeta.totalCount} 筆，顯示本頁最多 20 筆。` : "",
+        );
         return true;
       }
 
@@ -9033,7 +8982,7 @@
           return;
         }
 
-        await syncAdminFullOrders();
+        await loadAdminOrdersForCurrentView({ page: adminCurrentPage });
       }
 
       function reloadAdminPage() {
@@ -9052,11 +9001,14 @@
       async function refreshAdminOrdersFromOverlay() {
         setAdminRefreshState(true, "正在重新讀取訂單...");
         showAdminAuthOverlay("正在重新讀取訂單...", false, true, true);
-        const synced = await syncAdminFullOrders();
+        const synced = await loadAdminOrdersForCurrentView({
+          page: adminCurrentPage,
+          allowWhileEditing: true,
+        });
         if (!synced) {
           setAdminRefreshState(false, "重新讀取失敗，請稍後再試。");
           showAdminAuthOverlay(
-            "⚠️ 管理員完整訂單讀取失敗，請稍後再試。",
+            "⚠️ 本頁訂單讀取失敗，請稍後再試。",
             false,
             true,
           );
@@ -14290,7 +14242,7 @@
         adminCurrentPage = 1;
         setActiveFilterButton("dateFilterRow", btnElement);
         document.getElementById("customDateRange")?.classList.remove("active");
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function printShippingManifest() {
@@ -15673,26 +15625,6 @@
         initializeAdminCardViewMode();
         window.addEventListener("offline", handleAdminCreateNetworkOffline);
         window.addEventListener("online", handleAdminCreateNetworkRestored);
-        document.addEventListener(
-          "click",
-          guardAdminOrderWritesWhileSyncing,
-          true,
-        );
-        document.addEventListener(
-          "change",
-          guardAdminOrderWritesWhileSyncing,
-          true,
-        );
-        document.addEventListener(
-          "beforeinput",
-          guardAdminOrderWritesWhileSyncing,
-          true,
-        );
-        document.addEventListener(
-          "keydown",
-          guardAdminOrderWritesWhileSyncing,
-          true,
-        );
         const retryBtn = document.getElementById("adminAuthRetryBtn");
         const refreshBtn = document.getElementById("adminAuthRefreshBtn");
         const closeBtn = document.getElementById("adminAuthCloseBtn");
@@ -15717,7 +15649,7 @@
         document
           .getElementById("adminOrderSyncRetryBtn")
           ?.addEventListener("click", () => {
-            void syncAdminFullOrders();
+            void loadAdminOrdersForCurrentView({ page: adminCurrentPage });
           });
         document
           .getElementById("adminRefreshOrdersBtn")
@@ -15760,7 +15692,7 @@
             document
               .getElementById("customDateRange")
               ?.classList.remove("active");
-            applyCurrentFilter();
+            void loadAdminOrdersForCurrentView({ page: 1 });
           });
         const shippingManifestDateInput = document.getElementById(
           "shippingManifestDateInput",
@@ -15825,15 +15757,12 @@
         }
 
         const productCatalogPromise = fetchAdminProductCatalogFromGas();
-        const initialOrders = await fetchAdminOrdersFromGas({
-          silent: true,
-          viewMode: "filtered",
-          statusFilter: "全部",
-          notificationFilter: "全部",
+        const initialOrdersLoaded = await loadAdminOrdersForCurrentView({
           page: 1,
+          allowWhileEditing: true,
         });
 
-        if (!Array.isArray(initialOrders) || !renderAdminOrders(initialOrders)) {
+        if (!initialOrdersLoaded) {
           if (
             !String(
               sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
@@ -15857,10 +15786,7 @@
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
         hideAdminAuthOverlay();
-        void syncAdminFullOrders({
-          initial: true,
-          recoverPendingCreate: true,
-        });
+        await recoverPendingAdminCreateOrderOnLoad();
         await productCatalogPromise;
       });
       // ==========================================
@@ -16119,7 +16045,7 @@
           setCustomDateRange(start, dateValue);
         }
 
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function moveCustomDateCalendarMonth(offset) {
@@ -16134,7 +16060,7 @@
         currentFilterStatus = status;
         adminCurrentPage = 1;
         setActiveFilterButton("statusFilterRow", btnElement);
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function filterByDateRange(range, btnElement) {
@@ -16157,7 +16083,7 @@
           setCustomCalendarMonth(seed.year, seed.month);
           renderCustomDateCalendar();
         }
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function handleCustomDateRangeChange() {
@@ -16165,14 +16091,14 @@
         adminCurrentPage = 1;
         document.getElementById("customDateRange")?.classList.add("active");
         renderCustomDateCalendar();
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function filterByNotificationMode(mode, btnElement) {
         currentNotificationFilter = mode;
         adminCurrentPage = 1;
         setActiveFilterButton("notificationFilterRow", btnElement);
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function getAdminFilterCardDate(card) {
@@ -16494,9 +16420,12 @@
           if (!pagination || !info || !prevButton || !nextButton) return;
           pagination.hidden = totalCount <= ADMIN_ORDERS_PER_PAGE;
           info.innerText = `第 ${startIndex}-${endIndex} 張／共 ${totalCount} 張`;
-          prevButton.disabled = adminBatchProcessing || adminCurrentPage <= 1;
+          prevButton.disabled =
+            adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1;
           nextButton.disabled =
-            adminBatchProcessing || adminCurrentPage >= totalPages;
+            adminBatchProcessing ||
+            adminOrderViewLoading ||
+            adminCurrentPage >= totalPages;
         });
       }
 
@@ -17452,7 +17381,6 @@ ${adminNote}
                 String(checkbox.dataset.orderNo || "").trim(),
               );
             checkbox.disabled =
-              adminOrdersWriteLocked ||
               adminBatchProcessing ||
               checkbox.dataset.batchEligible !== "true";
           });
@@ -17460,7 +17388,6 @@ ${adminNote}
         const selectAll = document.getElementById("global-selectAll");
         if (selectAll) {
           selectAll.disabled =
-            adminOrdersWriteLocked ||
             adminBatchProcessing ||
             visibleCheckboxes.length === 0;
           selectAll.checked =
@@ -17480,7 +17407,7 @@ ${adminNote}
             ? "處理中…"
             : `標記已寄出並通知（${count}）`;
           batchShippedBtn.disabled =
-            adminOrdersWriteLocked || adminBatchProcessing || !shippedEligible;
+            adminBatchProcessing || !shippedEligible;
           batchShippedBtn.classList.toggle(
             "enabled",
             !batchShippedBtn.disabled,
@@ -17650,9 +17577,8 @@ ${adminNote}
       document
         .getElementById("adminPrevPageBtn")
         .addEventListener("click", () => {
-          if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          adminCurrentPage -= 1;
-          applyCurrentFilter();
+          if (adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1) return;
+          void loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 });
         });
 
       document
@@ -17660,35 +17586,36 @@ ${adminNote}
         .addEventListener("click", () => {
           if (
             adminBatchProcessing ||
+            adminOrderViewLoading ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          adminCurrentPage += 1;
-          applyCurrentFilter();
+          void loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 });
         });
 
       document
         .getElementById("adminPrevPageBtnBottom")
-        .addEventListener("click", () => {
-          if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          adminCurrentPage -= 1;
-          applyCurrentFilter();
-          document
-            .getElementById("cards-container")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        .addEventListener("click", async () => {
+          if (adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1) return;
+          if (await loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 })) {
+            document
+              .getElementById("cards-container")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
 
       document
         .getElementById("adminNextPageBtnBottom")
-        .addEventListener("click", () => {
+        .addEventListener("click", async () => {
           if (
             adminBatchProcessing ||
+            adminOrderViewLoading ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          adminCurrentPage += 1;
-          applyCurrentFilter();
-          document
-            .getElementById("cards-container")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          if (await loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 })) {
+            document
+              .getElementById("cards-container")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
 
       // 搜尋功能
@@ -17718,13 +17645,7 @@ ${adminNote}
         adminOrderSearchRequestId += 1;
         adminCurrentPage = 1;
         adminOrderSearchTimer = window.setTimeout(() => {
-          applyCurrentFilter();
-          const count = getFilteredAdminCards().length;
-          setAdminSearchStatus(
-            String(document.getElementById("searchBar")?.value || "").trim()
-              ? `已從完整訂單中找到 ${count} 筆。`
-              : "",
-          );
+          void loadAdminOrdersForCurrentView({ page: 1 });
         }, ADMIN_ORDER_SEARCH_DEBOUNCE_MS);
       }
 
@@ -18309,7 +18230,7 @@ ${adminNote}
         adminCreateOrderChecking = false;
         if (
           !applySingleOrderResponse(result.order, null, {
-            refreshInBackground: false,
+            refreshInBackground: true,
           })
         ) {
           throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
