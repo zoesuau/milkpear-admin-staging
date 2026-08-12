@@ -6061,6 +6061,7 @@
       let adminCreateOrderSubmitting = false;
       let adminCreateOrderChecking = false;
       let adminCreateRequestContext = null;
+      let adminCreateRecoveryPromise = null;
       let adminSelectedCustomer = null;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
@@ -6271,27 +6272,63 @@
           );
           const requestKey = String(parsed?.requestKey || "").trim();
           if (!/^[A-Za-z0-9_|-]{16,160}$/.test(requestKey)) return null;
+          const storedPayload =
+            parsed?.payload &&
+            Object.prototype.toString.call(parsed.payload) === "[object Object]"
+              ? { ...parsed.payload }
+              : null;
+          if (storedPayload) {
+            delete storedPayload.adminSessionToken;
+            storedPayload.action = "adminCreateOrder";
+            storedPayload.requestKey = requestKey;
+          }
           return {
             requestKey,
             submittedAt: Math.max(0, Number(parsed?.submittedAt) || 0),
+            payload: storedPayload,
           };
         } catch (error) {
           return null;
         }
       }
 
-      function storePendingAdminCreateRequest(requestKey) {
+      function storePendingAdminCreateRequest(payload) {
+        const requestKey = String(payload?.requestKey || "").trim();
+        if (!/^[A-Za-z0-9_|-]{16,160}$/.test(requestKey)) {
+          throw new Error("REQUEST_KEYS_INVALID");
+        }
+        const storedPayload = { ...payload };
+        delete storedPayload.adminSessionToken;
+        storedPayload.action = "adminCreateOrder";
+        storedPayload.requestKey = requestKey;
         sessionStorage.setItem(
           ADMIN_CREATE_PENDING_STORAGE_KEY,
           JSON.stringify({
-            requestKey: String(requestKey || "").trim(),
+            requestKey,
             submittedAt: Date.now(),
+            payload: storedPayload,
           }),
         );
       }
 
       function clearPendingAdminCreateRequest() {
         sessionStorage.removeItem(ADMIN_CREATE_PENDING_STORAGE_KEY);
+      }
+
+      function getPendingAdminCreatePayload(pending) {
+        if (!pending?.payload) return null;
+        return {
+          ...pending.payload,
+          action: "adminCreateOrder",
+          adminSessionToken: String(
+            sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+          ).trim(),
+          requestKey: pending.requestKey,
+        };
+      }
+
+      function isPendingAdminCreateRequestActive(requestKey) {
+        return loadPendingAdminCreateRequest()?.requestKey === requestKey;
       }
 
       function clearAdminAuthSession() {
@@ -15344,6 +15381,8 @@
       // 頁面初始化
       window.addEventListener("DOMContentLoaded", async () => {
         initializeAdminCardViewMode();
+        window.addEventListener("offline", handleAdminCreateNetworkOffline);
+        window.addEventListener("online", handleAdminCreateNetworkRestored);
         const retryBtn = document.getElementById("adminAuthRetryBtn");
         const refreshBtn = document.getElementById("adminAuthRefreshBtn");
         const closeBtn = document.getElementById("adminAuthCloseBtn");
@@ -17910,7 +17949,6 @@ ${adminNote}
 
         adminCreateRequestContext = null;
         adminCreateOrderChecking = false;
-        clearPendingAdminCreateRequest();
         if (
           !applySingleOrderResponse(result.order, null, {
             refreshInBackground: false,
@@ -17918,6 +17956,7 @@ ${adminNote}
         ) {
           throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
         }
+        clearPendingAdminCreateRequest();
 
         adminCreateOrderSubmitting = false;
         closeAddOrderModal();
@@ -17931,7 +17970,42 @@ ${adminNote}
         return true;
       }
 
-      async function checkPendingAdminCreateOrder(options = {}) {
+      function showPendingAdminCreateOfflineState(options = {}) {
+        const feedback =
+          options.feedback || document.getElementById("new-order-feedback");
+        const submitButton =
+          options.submitButton || document.getElementById("new-order-submit");
+        adminCreateOrderSubmitting = false;
+        adminCreateOrderChecking = true;
+        if (submitButton) {
+          submitButton.disabled = true;
+          submitButton.innerText = "等待網路恢復";
+        }
+        const message =
+          "網路已中斷。系統已保留這次建單，網路恢復後會自動先查核，再安全完成原訂單。";
+        if (feedback) {
+          feedback.className = "admin-content-feedback is-error";
+          feedback.innerText = message;
+        }
+        if (options.fromPageLoad === true) {
+          setAdminRefreshState(false, `⚠️ ${message}`);
+        }
+        return false;
+      }
+
+      function getAdminCreateRecoveryFailureMessage(errorCode) {
+        return errorCode === "EXPECTED_SHIPPING_DATE_REQUIRED"
+          ? "請選擇確定出貨日期。"
+          : errorCode === "EXPECTED_SHIPPING_DATE_INVALID"
+            ? "確定出貨日期格式不正確，請重新選擇。"
+            : errorCode === "DELIVERY_TIME_SLOT_INVALID"
+              ? "黑貓配達時段不正確，請重新選擇。"
+              : errorCode === "PRODUCT_STOCK_INSUFFICIENT"
+                ? "庫存不足，訂單尚未建立；請調整商品數量後再試。"
+                : "訂單資料未通過後端檢查，訂單尚未建立；請確認內容後再試。";
+      }
+
+      async function performPendingAdminCreateOrderRecovery(options = {}) {
         const feedback =
           options.feedback || document.getElementById("new-order-feedback");
         const submitButton =
@@ -17955,6 +18029,10 @@ ${adminNote}
           return false;
         }
 
+        if (navigator.onLine === false) {
+          return showPendingAdminCreateOfflineState(options);
+        }
+
         adminCreateOrderChecking = true;
         adminCreateOrderSubmitting = true;
         if (submitButton) {
@@ -17966,11 +18044,19 @@ ${adminNote}
           feedback.innerText = "系統正在查詢原本的建單結果，不會再次建立或重扣庫存。";
         }
 
-        let lastStatus = "not_found";
+        let lastStatus = "";
+        let confirmedNotFoundCount = 0;
+        let checkFailed = false;
         let sessionExpired = false;
         for (const delayMs of ADMIN_CREATE_AUTO_CHECK_DELAYS_MS) {
           if (delayMs > 0) {
             await new Promise((resolve) => window.setTimeout(resolve, delayMs));
+          }
+          if (navigator.onLine === false) {
+            return showPendingAdminCreateOfflineState(options);
+          }
+          if (!isPendingAdminCreateRequestActive(requestKey)) {
+            return true;
           }
           try {
             const response = await fetchWithTimeout(
@@ -18005,30 +18091,130 @@ ${adminNote}
               result?.ok !== true ||
               result?.action !== "adminCheckCreateOrderResult"
             ) {
-              continue;
+              checkFailed = true;
+              break;
             }
             lastStatus = String(result.status || "");
             if (lastStatus === "completed") {
               return finishAdminCreateOrder(result, feedback, submitButton);
             }
             if (lastStatus === "indeterminate") break;
+            if (lastStatus !== "not_found") {
+              checkFailed = true;
+              break;
+            }
+            confirmedNotFoundCount += 1;
           } catch (error) {
-            // 查核是只讀操作；短暫斷線時由下一次查核接手。
+            checkFailed = true;
+            break;
+          }
+        }
+
+        const pendingPayload = getPendingAdminCreatePayload(pending);
+        const canSafelyResend =
+          isPendingAdminCreateRequestActive(requestKey) &&
+          !sessionExpired &&
+          !checkFailed &&
+          lastStatus === "not_found" &&
+          confirmedNotFoundCount === ADMIN_CREATE_AUTO_CHECK_DELAYS_MS.length &&
+          pendingPayload;
+
+        if (canSafelyResend) {
+          if (!pendingPayload.adminSessionToken) {
+            sessionExpired = true;
+            showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+          } else {
+            if (submitButton) {
+              submitButton.disabled = true;
+              submitButton.innerText = "安全補送原訂單…";
+            }
+            if (feedback) {
+              feedback.className = "admin-content-feedback";
+              feedback.innerText =
+                "後端已連續確認原請求未到達，正使用同一個建單識別碼安全補送。";
+            }
+            try {
+              const resendResponse = await fetchWithTimeout(
+                GAS_ORDERS_API_URL,
+                {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "text/plain;charset=utf-8",
+                  },
+                  body: JSON.stringify(pendingPayload),
+                },
+                ADMIN_CREATE_ORDER_TIMEOUT_MS,
+              );
+              const resendResult = await resendResponse.json();
+              if (
+                resendResponse.ok &&
+                resendResult?.ok === true &&
+                resendResult?.action === "adminCreateOrder" &&
+                String(resendResult?.created?.orderNo || "").trim()
+              ) {
+                return finishAdminCreateOrder(
+                  resendResult,
+                  feedback,
+                  submitButton,
+                );
+              }
+
+              const errorCode = String(resendResult?.errorCode || "");
+              const serverConfirmedFailure =
+                resendResponse.ok &&
+                resendResult?.ok === false &&
+                resendResult?.action === "adminCreateOrder" &&
+                Boolean(errorCode);
+              if (errorCode === "ADMIN_SESSION_REQUIRED") {
+                sessionExpired = true;
+                sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+                showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+              } else if (
+                serverConfirmedFailure &&
+                errorCode !== "ORDER_CREATE_INDETERMINATE" &&
+                errorCode !== "ORDER_CREATE_BUSY" &&
+                errorCode !== "ADMIN_CREATE_REQUEST_KEY_CONFLICT"
+              ) {
+                clearPendingAdminCreateRequest();
+                adminCreateRequestContext = null;
+                adminCreateOrderSubmitting = false;
+                adminCreateOrderChecking = false;
+                if (submitButton) {
+                  submitButton.disabled = false;
+                  submitButton.innerText = "建立訂單";
+                }
+                if (feedback) {
+                  feedback.className = "admin-content-feedback is-error";
+                  feedback.innerText =
+                    getAdminCreateRecoveryFailureMessage(errorCode);
+                }
+                return false;
+              } else if (errorCode === "ADMIN_CREATE_REQUEST_KEY_CONFLICT") {
+                lastStatus = "indeterminate";
+              }
+            } catch (error) {
+              checkFailed = true;
+            }
           }
         }
 
         adminCreateOrderSubmitting = false;
         adminCreateOrderChecking = true;
+        if (navigator.onLine === false) {
+          return showPendingAdminCreateOfflineState(options);
+        }
         if (submitButton) {
           submitButton.disabled = sessionExpired;
           submitButton.innerText = sessionExpired
             ? "請先重新登入"
-            : "重新查核建立結果";
+            : "重新確認訂單結果";
         }
         const unresolvedMessage =
           lastStatus === "indeterminate"
             ? "訂單結果無法自動確認。請重新整理後以客戶電話搜尋，請勿重新建立。"
-            : "連線仍未恢復，系統沒有重新建單。可稍後再按「重新查核建立結果」。";
+            : pendingPayload
+              ? "連線或後端目前無法完成確認。原訂單已保留，系統不會產生新的建單識別碼；稍後再按「重新確認訂單結果」。"
+              : "這是舊版留下的待查核訂單，沒有可安全補送的原始內容。請重新整理後以客戶電話搜尋，請勿直接重建。";
         if (feedback) {
           feedback.className = "admin-content-feedback is-error";
           feedback.innerText = unresolvedMessage;
@@ -18037,6 +18223,28 @@ ${adminNote}
           setAdminRefreshState(false, `⚠️ ${unresolvedMessage}`);
         }
         return false;
+      }
+
+      async function checkPendingAdminCreateOrder(options = {}) {
+        if (adminCreateRecoveryPromise) return adminCreateRecoveryPromise;
+        adminCreateRecoveryPromise = performPendingAdminCreateOrderRecovery(
+          options,
+        ).finally(() => {
+          adminCreateRecoveryPromise = null;
+        });
+        return adminCreateRecoveryPromise;
+      }
+
+      function handleAdminCreateNetworkOffline() {
+        if (!loadPendingAdminCreateRequest()) return;
+        showPendingAdminCreateOfflineState();
+      }
+
+      function handleAdminCreateNetworkRestored() {
+        if (!loadPendingAdminCreateRequest()) return;
+        checkPendingAdminCreateOrder({ networkRestored: true }).catch(() => {
+          // 回復由內部狀態處理，避免 online 事件產生未處理的 Promise。
+        });
       }
 
       async function recoverPendingAdminCreateOrderOnLoad() {
@@ -18141,7 +18349,7 @@ ${adminNote}
 
         adminCreateOrderSubmitting = true;
         adminCreateOrderChecking = false;
-        storePendingAdminCreateRequest(payload.requestKey);
+        storePendingAdminCreateRequest(payload);
         submitButton.disabled = true;
         submitButton.innerText = "建立中…";
         feedback.className = "admin-content-feedback";
