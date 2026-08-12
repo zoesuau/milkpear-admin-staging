@@ -3242,15 +3242,13 @@
       /* 訂單卡片顯示方式：完整、精簡、清單 */
       .admin-card-view-toolbar {
         display: flex;
-        position: sticky;
-        right: 0;
+        position: relative;
         z-index: 10;
         align-items: center;
         justify-content: flex-end;
         gap: 6px;
-        width: fit-content;
-        max-width: none;
-        margin: 10px 12px 6px auto;
+        width: calc(100% - 24px);
+        margin: 10px auto 6px;
         padding: 0;
         border: 0;
         background: transparent;
@@ -3619,7 +3617,7 @@
 
       @media screen and (max-width: 767px) {
         .admin-card-view-toolbar {
-          margin-right: 0;
+          width: calc(100% - 16px);
         }
         .admin-card-view-button {
           width: 34px;
@@ -4710,7 +4708,6 @@
         <button type="button" id="adminNextPageBtn">下一頁</button>
       </div>
 
-      <div class="admin-card-list-scroll" id="adminCardListScroll">
       <div class="admin-card-view-toolbar" aria-label="訂單卡片顯示方式">
         <span class="admin-card-view-status" id="adminCardViewStatus" aria-live="polite"></span>
         <div class="admin-card-view-switch" role="group" aria-label="訂單卡片顯示方式">
@@ -4719,6 +4716,7 @@
           <button type="button" class="admin-card-view-button" data-admin-card-view="list" aria-label="清單表格" title="清單表格" aria-pressed="false" onclick="setAdminCardViewMode('list')"><i class="fa-solid fa-table-list" aria-hidden="true"></i><span class="admin-card-view-button-label">清單表格</span></button>
         </div>
       </div>
+      <div class="admin-card-list-scroll" id="adminCardListScroll">
       <div class="admin-card-list-header" id="adminCardListHeader" hidden aria-hidden="true">
         <span>選取</span>
         <span>收件人／電話</span>
@@ -8334,7 +8332,10 @@
       }
 
       function initializeAdminCardViewMode() {
-        return setAdminCardViewMode(getSavedAdminCardViewMode(), {
+        const initialMode = window.matchMedia("(min-width: 768px)").matches
+          ? "full"
+          : getSavedAdminCardViewMode();
+        return setAdminCardViewMode(initialMode, {
           force: true,
           persist: false,
         });
