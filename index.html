@@ -6126,6 +6126,9 @@
       let adminCustomerSearchVisibleCount = 50;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
+      let adminCustomerDirectory = [];
+      let adminCustomerDirectoryPromise = null;
+      let adminCustomerDirectoryReady = false;
       const adminContentBuyerHistoryTimers = new WeakMap();
       const adminContentBuyerHistoryRequestIds = new WeakMap();
       let adminSenderHistoryRequestId = 0;
@@ -6140,7 +6143,7 @@
       const ADMIN_CARD_VIEW_MODE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-card-view-mode-v2`;
       const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
-      const ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS = 350;
+      const ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS = 150;
       const ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE = 50;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
@@ -10254,6 +10257,7 @@
             }
             return;
           }
+          refreshAdminCustomerDirectoryInBackground();
           adminCancelOrderSetSaving(false);
           closeAdminCancelOrderModal();
           if (notificationWarning || notificationStatus !== "sent") {
@@ -10481,35 +10485,20 @@
       async function searchAdminContentBuyerHistory(input, query, requestId) {
         const editor = input?.closest(".admin-content-editor");
         const results = editor?.querySelector(".admin-content-buyer-history-results");
-        const adminSessionToken = String(
-          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-        ).trim();
-        if (!editor || !results || !adminSessionToken) return;
-        setAdminContentBuyerHistoryStatus(input, "搜尋歷史訂購人中...");
+        if (!editor || !results) return;
+        setAdminContentBuyerHistoryStatus(
+          input,
+          adminCustomerDirectoryReady
+            ? "搜尋歷史訂購人中..."
+            : "第一次正在準備舊客資料...",
+        );
         try {
-          const response = await fetchWithTimeout(
-            GAS_ORDERS_API_URL,
-            {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({
-                action: "adminSearchCustomers",
-                adminSessionToken,
-                query,
-              }),
-            },
-            ADMIN_READ_ORDERS_TIMEOUT_MS,
-          );
-          const payload = await response.json();
+          await loadAdminCustomerDirectory();
           if (
             adminContentBuyerHistoryRequestIds.get(input) !== requestId ||
             String(input.value || "").trim() !== query
           ) return;
-          if (
-            !response.ok ||
-            payload?.ok !== true ||
-            !Array.isArray(payload.buyers)
-          ) throw new Error(payload?.errorCode || "BUYER_SEARCH_FAILED");
+          const payload = getAdminCustomerDirectorySearchResults(query);
           renderAdminContentBuyerHistory(input, payload.buyers);
           setAdminContentBuyerHistoryStatus(
             input,
@@ -11001,6 +10990,7 @@
             ) {
               throw new Error("ORDER_CONTENT_REFRESH_FAILED");
             }
+            refreshAdminCustomerDirectoryInBackground();
             return;
           }
 
@@ -11016,6 +11006,7 @@
           restoreAdminOrderCardAfterRender(
             restoreState || { orderNo: savedOrderNo },
           );
+          refreshAdminCustomerDirectoryInBackground();
         } catch (error) {
           saveButton.disabled = false;
           saveButton.innerText = "儲存內容";
@@ -15786,6 +15777,7 @@
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
         hideAdminAuthOverlay();
+        loadAdminCustomerDirectory().catch(() => {});
         await recoverPendingAdminCreateOrderOnLoad();
         await productCatalogPromise;
       });
@@ -17776,6 +17768,302 @@ ${adminNote}
         return Array.from(normalized).length >= 1;
       }
 
+      function normalizeAdminCustomerPhone(value) {
+        const phone = String(value || "").replace(/\D/g, "").trim();
+        return /^9\d{8}$/.test(phone) ? `0${phone}` : phone;
+      }
+
+      function getComparableAdminCustomerDate(value) {
+        const text = String(value || "").trim();
+        if (!text) return 0;
+        const time = new Date(text.replace(/\//g, "-")).getTime();
+        return Number.isFinite(time) ? time : 0;
+      }
+
+      function normalizeAdminCustomerAddressCore(value) {
+        let text = String(value || "").replace(/[　\s]+/g, " ").trim();
+        if (!text) return "";
+        text = text
+          .replace(/\s+(?:\d+\s*\*\s*\d+.*)$/i, "")
+          .replace(/\s+(?:特大果?.*|特大.*|大果.*|小果.*|大\*\d+.*)$/i, "")
+          .replace(/\s+(?:[一二三四五六七八九十\d]+[箱盒].*)$/i, "")
+          .replace(/\s+(?:\d{1,2}\s*[aA]\s*.*|\d{1,2}\s*[-\\/]\s*\d+.*)$/i, "")
+          .replace(/\s+(?:.*放賀卡.*|.*賀卡.*|.*檸檬.*|.*百香果.*)$/i, "");
+        return text
+          .replace(/[　\s,，;；。．.]/g, "")
+          .replace(/臺/g, "台")
+          .toLowerCase();
+      }
+
+      function getAdminCustomerLocalDedupeKey(customer, index) {
+        const phone = normalizeAdminCustomerPhone(customer?.recipientPhone);
+        const addressCore = normalizeAdminCustomerAddressCore(
+          customer?.recipientAddress,
+        );
+        if (phone && addressCore) return `${phone}|${addressCore}`;
+        if (phone) return `${phone}|${String(customer?.recipientName || "").trim()}`;
+        if (addressCore) {
+          return `${String(customer?.recipientName || "").trim().toLowerCase()}|${addressCore}`;
+        }
+        return String(customer?.customerId || `row-${index}`).trim();
+      }
+
+      function getAdminCustomerLocalSearchMatch(customer, queryLower, queryPhone) {
+        const buyerName = String(customer?.buyerName || "").trim().toLowerCase();
+        const buyerPhone = normalizeAdminCustomerPhone(customer?.buyerPhone);
+        const recipientName = String(customer?.recipientName || "")
+          .trim()
+          .toLowerCase();
+        const recipientPhone = normalizeAdminCustomerPhone(customer?.recipientPhone);
+        const address = String(customer?.recipientAddress || "").trim().toLowerCase();
+        const matchedBySender =
+          (queryLower && buyerName.includes(queryLower)) ||
+          (queryPhone.length >= 3 && buyerPhone.includes(queryPhone));
+        const matchedByRecipient =
+          (queryLower && recipientName.includes(queryLower)) ||
+          (queryPhone.length >= 3 && recipientPhone.includes(queryPhone)) ||
+          (queryLower.length >= 3 && address.includes(queryLower));
+        return {
+          matched: matchedBySender || matchedByRecipient,
+          matchedBySender,
+          matchedByRecipient,
+        };
+      }
+
+      function getAdminCustomerLocalSearchRank(customer, queryLower, queryPhone) {
+        const names = [customer?.buyerName, customer?.recipientName]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean);
+        const phones = [customer?.buyerPhone, customer?.recipientPhone]
+          .map(normalizeAdminCustomerPhone)
+          .filter(Boolean);
+        if (queryPhone) {
+          if (phones.some((phone) => phone === queryPhone)) return 0;
+          if (phones.some((phone) => phone.startsWith(queryPhone))) return 1;
+          if (phones.some((phone) => phone.includes(queryPhone))) return 2;
+        }
+        if (queryLower) {
+          if (names.some((name) => name === queryLower)) return 0;
+          if (names.some((name) => name.startsWith(queryLower))) return 1;
+          if (names.some((name) => name.includes(queryLower))) return 2;
+          if (
+            queryLower.length >= 2 &&
+            String(customer?.recipientAddress || "").toLowerCase().includes(queryLower)
+          ) return 3;
+        }
+        return 99;
+      }
+
+      function chooseAdminCustomerLocalSummary(current, candidate) {
+        if (!current) return candidate;
+        const currentDate = Math.max(
+          getComparableAdminCustomerDate(current.lastOrderDate),
+          getComparableAdminCustomerDate(current.lastUpdatedAt),
+        );
+        const candidateDate = Math.max(
+          getComparableAdminCustomerDate(candidate.lastOrderDate),
+          getComparableAdminCustomerDate(candidate.lastUpdatedAt),
+        );
+        if (candidateDate > currentDate) return candidate;
+        const currentNameLength = String(
+          current.recipientName || current.buyerName || "",
+        ).length;
+        const candidateNameLength = String(
+          candidate.recipientName || candidate.buyerName || "",
+        ).length;
+        return candidateDate === currentDate && candidateNameLength > currentNameLength
+          ? candidate
+          : current;
+      }
+
+      function dedupeAdminCustomerLocalSummaries(customers) {
+        const grouped = new Map();
+        customers.forEach((customer, index) => {
+          const key = getAdminCustomerLocalDedupeKey(customer, index);
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              best: customer,
+              customerRecordCount: 0,
+              historyOrderCount: 0,
+              matchedBySender: false,
+              matchedByRecipient: false,
+            });
+          }
+          const item = grouped.get(key);
+          if (customer.sourceType === "customer") item.customerRecordCount += 1;
+          if (customer.sourceType === "order") {
+            item.historyOrderCount += Number(customer.historyOrderCount || 1);
+          }
+          item.matchedBySender ||= customer.matchedBySender === true;
+          item.matchedByRecipient ||= customer.matchedByRecipient === true;
+          item.best = chooseAdminCustomerLocalSummary(item.best, customer);
+        });
+        return [...grouped.values()].map((item) => ({
+          ...item.best,
+          duplicateCount: item.customerRecordCount,
+          historyOrderCount: item.historyOrderCount,
+          matchedBySender: item.matchedBySender,
+          matchedByRecipient: item.matchedByRecipient,
+        }));
+      }
+
+      function buildAdminBuyerLocalSearchResults(matches) {
+        const grouped = new Map();
+        matches.forEach((customer) => {
+          const buyerName = String(customer?.buyerName || "").trim();
+          const buyerPhone = normalizeAdminCustomerPhone(customer?.buyerPhone);
+          if (!buyerName || !buyerPhone) return;
+          const key = `${buyerName.toLowerCase()}|${buyerPhone}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              buyerName,
+              buyerPhone,
+              lastOrderDate: customer.lastOrderDate || "",
+              historyOrderCount: 0,
+              customerHistoryOrderCount: 0,
+              searchRank: Number(customer.searchRank) || 0,
+            });
+          }
+          const item = grouped.get(key);
+          if (customer.sourceType === "order") {
+            item.historyOrderCount += Number(customer.historyOrderCount || 1);
+          } else {
+            item.customerHistoryOrderCount = Math.max(
+              item.customerHistoryOrderCount,
+              Number(customer.historyOrderCount || 0),
+            );
+          }
+          if (
+            getComparableAdminCustomerDate(customer.lastOrderDate) >
+            getComparableAdminCustomerDate(item.lastOrderDate)
+          ) item.lastOrderDate = customer.lastOrderDate;
+          item.searchRank = Math.min(item.searchRank, Number(customer.searchRank) || 0);
+        });
+        return [...grouped.values()]
+          .map((item) => {
+            if (!item.historyOrderCount) {
+              item.historyOrderCount = item.customerHistoryOrderCount;
+            }
+            delete item.customerHistoryOrderCount;
+            return item;
+          })
+          .sort(
+            (a, b) =>
+              a.searchRank - b.searchRank ||
+              getComparableAdminCustomerDate(b.lastOrderDate) -
+                getComparableAdminCustomerDate(a.lastOrderDate),
+          );
+      }
+
+      function getAdminCustomerDirectorySearchResults(query) {
+        const normalizedQuery = String(query || "").trim();
+        const queryLower = normalizedQuery.toLowerCase();
+        const queryPhone = normalizeAdminCustomerPhone(normalizedQuery);
+        const matches = adminCustomerDirectory.flatMap((customer) => {
+          const match = getAdminCustomerLocalSearchMatch(
+            customer,
+            queryLower,
+            queryPhone,
+          );
+          if (!match.matched) return [];
+          return [{
+            ...customer,
+            ...match,
+            searchRank: getAdminCustomerLocalSearchRank(
+              customer,
+              queryLower,
+              queryPhone,
+            ),
+          }];
+        });
+        const customers = dedupeAdminCustomerLocalSummaries(matches).sort(
+          (a, b) =>
+            getAdminCustomerLocalSearchRank(a, queryLower, queryPhone) -
+              getAdminCustomerLocalSearchRank(b, queryLower, queryPhone) ||
+            Math.max(
+              getComparableAdminCustomerDate(b.lastOrderDate),
+              getComparableAdminCustomerDate(b.lastUpdatedAt),
+            ) -
+              Math.max(
+                getComparableAdminCustomerDate(a.lastOrderDate),
+                getComparableAdminCustomerDate(a.lastUpdatedAt),
+              ),
+        );
+        return {
+          customers,
+          buyers: buildAdminBuyerLocalSearchResults(matches),
+          matchedOrderCount: matches.filter(
+            (customer) => customer.sourceType === "order",
+          ).length,
+        };
+      }
+
+      async function loadAdminCustomerDirectory() {
+        if (adminCustomerDirectoryReady) return adminCustomerDirectory;
+        if (adminCustomerDirectoryPromise) return adminCustomerDirectoryPromise;
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) throw new Error("ADMIN_SESSION_REQUIRED");
+
+        adminCustomerDirectoryPromise = (async () => {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminReadCustomerDirectory",
+                adminSessionToken,
+              }),
+            },
+            ADMIN_READ_ORDERS_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            payload?.action !== "adminReadCustomerDirectory" ||
+            !Array.isArray(payload.directory)
+          ) {
+            if (payload?.errorCode === "ADMIN_SESSION_REQUIRED") {
+              sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+              showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+            }
+            throw new Error(payload?.errorCode || "CUSTOMER_DIRECTORY_READ_FAILED");
+          }
+          adminCustomerDirectory = payload.directory;
+          adminCustomerDirectoryReady = true;
+          return adminCustomerDirectory;
+        })();
+
+        try {
+          return await adminCustomerDirectoryPromise;
+        } finally {
+          adminCustomerDirectoryPromise = null;
+        }
+      }
+
+      function refreshAdminCustomerDirectoryInBackground() {
+        if (adminCustomerDirectoryPromise) {
+          const inFlightDirectory = adminCustomerDirectoryPromise;
+          const refreshAfterCurrentLoad = () => {
+            window.setTimeout(() => {
+              adminCustomerDirectoryReady = false;
+              adminCustomerDirectory = [];
+              loadAdminCustomerDirectory().catch(() => {});
+            }, 0);
+          };
+          inFlightDirectory.then(refreshAfterCurrentLoad, refreshAfterCurrentLoad);
+          return;
+        }
+        adminCustomerDirectoryReady = false;
+        adminCustomerDirectory = [];
+        window.setTimeout(() => {
+          loadAdminCustomerDirectory().catch(() => {});
+        }, 0);
+      }
+
       async function searchAdminCustomersNow(query) {
         const requestId = ++adminCustomerSearchRequestId;
         const normalizedQuery = String(query || "").trim();
@@ -17787,47 +18075,19 @@ ${adminNote}
           return;
         }
 
-        const adminSessionToken = String(
-          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-        ).trim();
-        if (!adminSessionToken) {
-          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
-          return;
-        }
-
-        setAdminCustomerSearchStatus("搜尋舊客戶中...");
+        setAdminCustomerSearchStatus(
+          adminCustomerDirectoryReady
+            ? "搜尋舊客戶中..."
+            : "第一次正在準備舊客資料，完成後會自動顯示...",
+        );
         try {
-          const response = await fetchWithTimeout(
-            GAS_ORDERS_API_URL,
-            {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({
-                action: "adminSearchCustomers",
-                adminSessionToken,
-                query: normalizedQuery,
-              }),
-            },
-            ADMIN_READ_ORDERS_TIMEOUT_MS,
-          );
-          const payload = await response.json();
+          await loadAdminCustomerDirectory();
           if (requestId !== adminCustomerSearchRequestId) return;
-          if (
-            !response.ok ||
-            payload?.ok !== true ||
-            payload?.action !== "adminSearchCustomers" ||
-            !Array.isArray(payload.customers)
-          ) {
-            if (payload?.errorCode === "ADMIN_SESSION_REQUIRED") {
-              sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
-              showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
-            }
-            throw new Error(payload?.errorCode || "CUSTOMER_SEARCH_FAILED");
-          }
+          const payload = getAdminCustomerDirectorySearchResults(normalizedQuery);
           renderAdminCustomerResults(payload.customers);
           setAdminCustomerSearchStatus(
             payload.customers.length
-              ? `找到 ${payload.uniqueRecipientCount ?? payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}。`
+              ? `找到 ${payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}。`
               : "找不到符合客戶；建立訂單後會新增到客戶主檔。",
           );
         } catch (error) {
@@ -17951,28 +18211,14 @@ ${adminNote}
           return;
         }
 
-        const adminSessionToken = String(
-          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-        ).trim();
-        if (!adminSessionToken) return;
-
         const requestId = ++adminSenderHistoryRequestId;
-        setNewOrderSenderHistoryStatus("查詢歷史電話中...");
+        setNewOrderSenderHistoryStatus(
+          adminCustomerDirectoryReady
+            ? "查詢歷史電話中..."
+            : "第一次正在準備舊客資料...",
+        );
         try {
-          const response = await fetchWithTimeout(
-            GAS_ORDERS_API_URL,
-            {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({
-                action: "adminSearchCustomers",
-                adminSessionToken,
-                query: buyerName,
-              }),
-            },
-            ADMIN_READ_ORDERS_TIMEOUT_MS,
-          );
-          const payload = await response.json();
+          await loadAdminCustomerDirectory();
           if (
             requestId !== adminSenderHistoryRequestId ||
             normalizeAdminCustomerLookupName(senderName?.value) !==
@@ -17980,15 +18226,7 @@ ${adminNote}
           ) {
             return;
           }
-          if (
-            !response.ok ||
-            payload?.ok !== true ||
-            payload?.action !== "adminSearchCustomers" ||
-            !Array.isArray(payload.customers)
-          ) {
-            throw new Error(payload?.errorCode || "CUSTOMER_SEARCH_FAILED");
-          }
-
+          const payload = getAdminCustomerDirectorySearchResults(buyerName);
           const resolved = resolveHistoricalBuyerPhone(
             payload.customers,
             buyerName,
@@ -18236,6 +18474,7 @@ ${adminNote}
           throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
         }
         clearPendingAdminCreateRequest();
+        refreshAdminCustomerDirectoryInBackground();
 
         adminCreateOrderSubmitting = false;
         closeAddOrderModal();
