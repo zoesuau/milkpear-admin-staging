@@ -1405,24 +1405,8 @@
       }
 
       .customer-search-row .form-control {
-        flex: 1 1 70%;
+        flex: 1 1 100%;
         min-width: 0;
-      }
-
-      .customer-search-confirm {
-        flex: 0 0 30%;
-        min-width: 86px;
-        border: none;
-        border-radius: 8px;
-        background: #4f7f63;
-        color: #fff;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 900;
-      }
-
-      .customer-search-confirm:active {
-        background: #3d634d;
       }
 
       .customer-search-results {
@@ -1456,6 +1440,16 @@
       .customer-result-button.is-selected {
         background: #eef7f1;
         border-color: #4f7f63;
+      }
+      .customer-results-more {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #8fb6a0;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #356448;
+        cursor: pointer;
+        font-weight: 900;
       }
 
       .customer-result-name {
@@ -2059,6 +2053,41 @@
         font-size: 12px;
         line-height: 1.5;
         margin-top: 6px;
+      }
+      .admin-content-buyer-history-status {
+        min-height: 18px;
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .admin-content-buyer-history-results {
+        display: grid;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .admin-content-buyer-history-option {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #dbe5dd;
+        border-radius: 9px;
+        background: #ffffff;
+        color: #334155;
+        cursor: pointer;
+        text-align: left;
+      }
+      .admin-content-buyer-history-option:hover,
+      .admin-content-buyer-history-option:focus-visible {
+        border-color: #4f7f63;
+        background: #eef7f1;
+      }
+      .admin-content-buyer-history-option strong,
+      .admin-content-buyer-history-option small {
+        display: block;
+      }
+      .admin-content-buyer-history-option small {
+        margin-top: 2px;
+        color: #64748b;
       }
       .admin-content-product-row {
         display: flex;
@@ -5814,13 +5843,6 @@
                   autocomplete="off"
                   placeholder="例如：陳美玲、0912、電話末三碼"
                 />
-                <button
-                  type="button"
-                  id="admin-customer-search-confirm"
-                  class="customer-search-confirm"
-                >
-                  確認
-                </button>
               </div>
               <div
                 id="admin-customer-search-status"
@@ -6123,8 +6145,12 @@
       let adminCreateRequestContext = null;
       let adminCreateRecoveryPromise = null;
       let adminSelectedCustomer = null;
+      let adminCustomerSearchResults = [];
+      let adminCustomerSearchVisibleCount = 50;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
+      const adminContentBuyerHistoryTimers = new WeakMap();
+      const adminContentBuyerHistoryRequestIds = new WeakMap();
       let adminSenderHistoryRequestId = 0;
       const selectedOrderNos = new Set();
       const unconfirmedNotificationOrderNos = new Set();
@@ -6137,6 +6163,8 @@
       const ADMIN_CARD_VIEW_MODE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-card-view-mode-v2`;
       const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
+      const ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS = 350;
+      const ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE = 50;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
       let adminCardViewMode = "full";
@@ -10462,6 +10490,113 @@
         `;
       }
 
+      function setAdminContentBuyerHistoryStatus(input, message, isError = false) {
+        const editor = input?.closest(".admin-content-editor");
+        const status = editor?.querySelector(".admin-content-buyer-history-status");
+        if (!status) return;
+        status.innerText = String(message || "");
+        status.style.color = isError ? "#dc2626" : "#64748b";
+      }
+
+      function renderAdminContentBuyerHistory(input, buyers) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        if (!results) return;
+        const options = Array.isArray(buyers) ? buyers.slice(0, 20) : [];
+        results.innerHTML = options
+          .map(
+            (buyer, index) => `
+              <button type="button" class="admin-content-buyer-history-option" data-buyer-index="${index}">
+                <strong>${escapeHtml(buyer.buyerName || "")}｜${escapeHtml(buyer.buyerPhone || "")}</strong>
+                <small>${Number(buyer.historyOrderCount || 0) ? `歷史 ${escapeHtml(String(buyer.historyOrderCount))} 筆` : "歷史資料"}${buyer.lastOrderDate ? `｜最近 ${escapeHtml(buyer.lastOrderDate)}` : ""}</small>
+              </button>
+            `,
+          )
+          .join("");
+        results.querySelectorAll(".admin-content-buyer-history-option").forEach((button) => {
+          button.addEventListener("click", () => {
+            const buyer = options[Number(button.dataset.buyerIndex)];
+            const phoneInput = editor.querySelector(".admin-content-buyer-phone");
+            if (!buyer || !phoneInput) return;
+            input.value = buyer.buyerName || "";
+            phoneInput.value = buyer.buyerPhone || "";
+            results.innerHTML = "";
+            setAdminContentBuyerHistoryStatus(input, "已帶入選定的歷史訂購人資料。");
+          });
+        });
+      }
+
+      async function searchAdminContentBuyerHistory(input, query, requestId) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!editor || !results || !adminSessionToken) return;
+        setAdminContentBuyerHistoryStatus(input, "搜尋歷史訂購人中...");
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminSearchCustomers",
+                adminSessionToken,
+                query,
+              }),
+            },
+            ADMIN_READ_ORDERS_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            adminContentBuyerHistoryRequestIds.get(input) !== requestId ||
+            String(input.value || "").trim() !== query
+          ) return;
+          if (
+            !response.ok ||
+            payload?.ok !== true ||
+            !Array.isArray(payload.buyers)
+          ) throw new Error(payload?.errorCode || "BUYER_SEARCH_FAILED");
+          renderAdminContentBuyerHistory(input, payload.buyers);
+          setAdminContentBuyerHistoryStatus(
+            input,
+            payload.buyers.length
+              ? `找到 ${payload.buyers.length} 筆，請選擇正確姓名與電話。`
+              : "找不到歷史訂購人，可直接手動輸入。",
+          );
+        } catch (error) {
+          if (adminContentBuyerHistoryRequestIds.get(input) !== requestId) return;
+          results.innerHTML = "";
+          setAdminContentBuyerHistoryStatus(input, "歷史訂購人搜尋失敗，可繼續手動輸入。", true);
+        }
+      }
+
+      function handleAdminContentBuyerHistoryInput(input) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        if (!input || !results || input.disabled) return;
+        const previousTimer = adminContentBuyerHistoryTimers.get(input);
+        if (previousTimer) clearTimeout(previousTimer);
+        const requestId = (adminContentBuyerHistoryRequestIds.get(input) || 0) + 1;
+        adminContentBuyerHistoryRequestIds.set(input, requestId);
+        results.innerHTML = "";
+        const query = String(input.value || "").trim();
+        if (!query) {
+          setAdminContentBuyerHistoryStatus(input, "");
+          return;
+        }
+        if (!isValidAdminCustomerSearchQuery(query)) {
+          setAdminContentBuyerHistoryStatus(input, "中文可輸入 1 個字；英數至少 2 碼。");
+          return;
+        }
+        setAdminContentBuyerHistoryStatus(input, "準備搜尋...");
+        const timer = window.setTimeout(() => {
+          searchAdminContentBuyerHistory(input, query, requestId);
+        }, ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS);
+        adminContentBuyerHistoryTimers.set(input, timer);
+      }
+
       function enterAdminContentEdit(card) {
         if (!card || card.dataset.contentEditing === "true") return;
 
@@ -10503,7 +10638,12 @@
             <div class="admin-content-section">
               <div class="admin-content-section-title">2. 訂購人資料</div>
               <div class="admin-content-grid">
-                <div class="admin-content-field"><label>訂購人姓名</label><input class="admin-content-buyer-name" value="${escapeHtml(order.buyerName || "")}" ${lockedAttribute}></div>
+                <div class="admin-content-field full">
+                  <label>訂購人姓名</label>
+                  <input class="admin-content-buyer-name" value="${escapeHtml(order.buyerName || "")}" autocomplete="off" oninput="handleAdminContentBuyerHistoryInput(this)" ${lockedAttribute}>
+                  <div class="admin-content-buyer-history-status" aria-live="polite"></div>
+                  <div class="admin-content-buyer-history-results"></div>
+                </div>
                 <div class="admin-content-field"><label>訂購人電話</label><input class="admin-content-buyer-phone" value="${escapeHtml(order.buyerPhone || "")}" ${lockedAttribute}></div>
               </div>
             </div>
@@ -15589,9 +15729,6 @@
           .getElementById("admin-customer-search")
           ?.addEventListener("keydown", handleAdminCustomerSearchKeydown);
         document
-          .getElementById("admin-customer-search-confirm")
-          ?.addEventListener("click", handleAdminCustomerSearchConfirm);
-        document
           .getElementById("new-sender-same-as-recipient")
           ?.addEventListener("change", handleNewOrderSameAsRecipientChange);
         document
@@ -17594,6 +17731,8 @@ ${adminNote}
       // 彈窗模組開啟關閉
       function resetAdminCustomerLookup() {
         adminSelectedCustomer = null;
+        adminCustomerSearchResults = [];
+        adminCustomerSearchVisibleCount = ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
         adminCustomerSearchRequestId += 1;
         adminSenderHistoryRequestId += 1;
         if (adminCustomerSearchTimer) {
@@ -17633,14 +17772,20 @@ ${adminNote}
         status.style.color = isError ? "#dc2626" : "#64748b";
       }
 
-      function renderAdminCustomerResults(customers) {
+      function renderAdminCustomerResults(customers, preserveVisibleCount = false) {
         const results = document.getElementById("admin-customer-results");
         if (!results) return;
         if (!Array.isArray(customers) || customers.length === 0) {
+          adminCustomerSearchResults = [];
           results.innerHTML = "";
           return;
         }
-        results.innerHTML = customers
+        adminCustomerSearchResults = customers;
+        if (!preserveVisibleCount) {
+          adminCustomerSearchVisibleCount = ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
+        }
+        const visibleCustomers = customers.slice(0, adminCustomerSearchVisibleCount);
+        results.innerHTML = visibleCustomers
           .map((customer, customerIndex) => {
             const recipientName =
               customer.recipientName || customer.buyerName || "未命名收件人";
@@ -17682,7 +17827,10 @@ ${adminNote}
               </button>
             `;
           })
-          .join("");
+          .join("") +
+          (customers.length > visibleCustomers.length
+            ? `<button type="button" class="customer-results-more">顯示更多（還有 ${customers.length - visibleCustomers.length} 筆）</button>`
+            : "");
         results
           .querySelectorAll(".customer-result-button")
           .forEach((button) => {
@@ -17692,17 +17840,29 @@ ${adminNote}
               if (customer) selectAdminCustomer(customer);
             });
           });
+        results.querySelector(".customer-results-more")?.addEventListener("click", () => {
+          adminCustomerSearchVisibleCount += ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
+          renderAdminCustomerResults(adminCustomerSearchResults, true);
+        });
+      }
+
+      function isValidAdminCustomerSearchQuery(query) {
+        const normalized = String(query || "").replace(/\s+/g, "").trim();
+        if (!normalized) return false;
+        const digits = normalized.replace(/\D/g, "");
+        if (/^[\d()+-]+$/.test(normalized)) return digits.length >= 3;
+        if (/^[A-Za-z0-9]+$/.test(normalized)) return normalized.length >= 2;
+        return Array.from(normalized).length >= 1;
       }
 
       async function searchAdminCustomersNow(query) {
         const requestId = ++adminCustomerSearchRequestId;
         const normalizedQuery = String(query || "").trim();
-        const queryDigits = normalizedQuery.replace(/\D/g, "");
         const results = document.getElementById("admin-customer-results");
 
-        if (normalizedQuery.length < 2 && queryDigits.length < 3) {
+        if (!isValidAdminCustomerSearchQuery(normalizedQuery)) {
           if (results) results.innerHTML = "";
-          setAdminCustomerSearchStatus("至少輸入 2 個字，或 3 碼以上電話。");
+          setAdminCustomerSearchStatus("中文可輸入 1 個字；英數至少 2 碼，電話至少 3 碼。");
           return;
         }
 
@@ -17716,15 +17876,19 @@ ${adminNote}
 
         setAdminCustomerSearchStatus("搜尋舊客戶中...");
         try {
-          const response = await fetch(GAS_ORDERS_API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "adminSearchCustomers",
-              adminSessionToken,
-              query: normalizedQuery,
-            }),
-          });
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminSearchCustomers",
+                adminSessionToken,
+                query: normalizedQuery,
+              }),
+            },
+            ADMIN_READ_ORDERS_TIMEOUT_MS,
+          );
           const payload = await response.json();
           if (requestId !== adminCustomerSearchRequestId) return;
           if (
@@ -17742,7 +17906,7 @@ ${adminNote}
           renderAdminCustomerResults(payload.customers);
           setAdminCustomerSearchStatus(
             payload.customers.length
-              ? `找到 ${payload.uniqueRecipientCount ?? payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}，以下全部顯示。`
+              ? `找到 ${payload.uniqueRecipientCount ?? payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}。`
               : "找不到符合客戶；建立訂單後會新增到客戶主檔。",
           );
         } catch (error) {
@@ -17753,6 +17917,7 @@ ${adminNote}
       }
 
       function handleAdminCustomerSearchInput(event) {
+        adminCustomerSearchRequestId += 1;
         adminSelectedCustomer = null;
         const selectedPanel = document.getElementById(
           "admin-selected-customer",
@@ -17766,10 +17931,26 @@ ${adminNote}
         }
         if (syncCheckbox) syncCheckbox.checked = false;
         if (adminCustomerSearchTimer) clearTimeout(adminCustomerSearchTimer);
-        setAdminCustomerSearchStatus("輸入完成後按確認搜尋。");
+        const query = String(event?.target?.value || "").trim();
+        if (!query) {
+          adminCustomerSearchResults = [];
+          const results = document.getElementById("admin-customer-results");
+          if (results) results.innerHTML = "";
+          setAdminCustomerSearchStatus("輸入姓名或電話後會自動搜尋。");
+          return;
+        }
+        if (!isValidAdminCustomerSearchQuery(query)) {
+          setAdminCustomerSearchStatus("中文可輸入 1 個字；英數至少 2 碼，電話至少 3 碼。");
+          return;
+        }
+        setAdminCustomerSearchStatus("準備搜尋...");
+        adminCustomerSearchTimer = window.setTimeout(() => {
+          searchAdminCustomersNow(query);
+        }, ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS);
       }
 
-      function handleAdminCustomerSearchConfirm() {
+      function runAdminCustomerSearchImmediately() {
+        if (adminCustomerSearchTimer) clearTimeout(adminCustomerSearchTimer);
         const query = document.getElementById("admin-customer-search")?.value || "";
         searchAdminCustomersNow(query);
       }
@@ -17777,7 +17958,7 @@ ${adminNote}
       function handleAdminCustomerSearchKeydown(event) {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        handleAdminCustomerSearchConfirm();
+        runAdminCustomerSearchImmediately();
       }
 
       function normalizeAdminCustomerLookupName(value) {
