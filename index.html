@@ -6082,7 +6082,9 @@
       const ADMIN_LINE_SESSION_TOKEN_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-session-token`;
       const ADMIN_DISPLAY_NAME_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-display-name`;
       const ADMIN_AUTH_TIMEOUT_MS = 60000;
+      const ADMIN_VALIDATE_SESSION_TIMEOUT_MS = 20000;
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
+      const ADMIN_READ_ORDERS_RETRY_DELAY_MS = 800;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_CHECK_TIMEOUT_MS = 15000;
@@ -6112,6 +6114,7 @@
         statusCounts: { pending: 0, notice: 0 },
       };
       let adminOrderQueryRequestId = 0;
+      let adminLastOrderReadDiagnostic = null;
       let adminOrderSearchTimer = null;
       let adminOrderSearchRequestId = 0;
       let adminBackgroundRefreshTimer = null;
@@ -6305,6 +6308,26 @@
           .join("|")
           .replace(/\s+/g, "")
           .slice(0, 160);
+      }
+
+      function createAdminDiagnosticRequestId(action) {
+        const nonce =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID().replace(/-/g, "")
+            : `${Date.now()}${Math.random().toString(36).slice(2)}`;
+        return createAdminRequestKey(action, [nonce]);
+      }
+
+      function waitForAdminRetry(delayMs) {
+        return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+
+      function isTransientAdminReadClientError(error) {
+        if (error?.retryable === true) return true;
+        if (error?.name === "AbortError") return true;
+        return /FAILED(?:_| )TO(?:_| )FETCH|NETWORK|LOAD(?:_| )FAILED|TEMPORAR|TIMEOUT/i.test(
+          String(error?.message || ""),
+        );
       }
 
       function getAdminCreatePayloadFingerprint(payload) {
@@ -6588,6 +6611,67 @@
         }
       }
 
+      async function validateExistingAdminSession() {
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) return false;
+
+        const requestId = createAdminDiagnosticRequestId(
+          "adminValidateSession",
+        );
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "text/plain;charset=utf-8",
+              },
+              body: JSON.stringify({
+                action: "adminValidateSession",
+                adminSessionToken,
+                requestId,
+              }),
+            },
+            ADMIN_VALIDATE_SESSION_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            payload?.ok === true &&
+            payload?.action === "adminValidateSession" &&
+            payload?.allowed === true
+          ) {
+            const adminDisplayName = String(
+              payload?.admin?.displayName || "",
+            ).trim();
+            if (adminDisplayName) {
+              currentAdminName = adminDisplayName;
+              sessionStorage.setItem(ADMIN_DISPLAY_NAME_KEY, adminDisplayName);
+            }
+            return true;
+          }
+
+          if (payload?.error === "ADMIN_SESSION_REQUIRED") {
+            sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+            showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+            return false;
+          }
+
+          throw new Error(
+            String(payload?.error || "ADMIN_SESSION_VALIDATION_FAILED"),
+          );
+        } catch (error) {
+          showAdminAuthOverlay(
+            `⚠️ 登入狀態暫時無法確認，請稍後再試。\n診斷編號：${requestId}`,
+            false,
+            false,
+            true,
+          );
+          return false;
+        }
+      }
+
       async function initAdminAuth() {
         showAdminAuthOverlay("管理員登入確認中...", false);
 
@@ -6630,7 +6714,7 @@
 
         if (existingSessionToken) {
           showAdminAuthOverlay("正在驗證既有管理員登入狀態...", false);
-          return true;
+          return validateExistingAdminSession();
         }
 
         await startAdminAuth();
@@ -8780,12 +8864,15 @@
         const silent = options && options.silent === true;
         const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
         const adminReadStatusEl = document.getElementById("adminReadStatus");
+        const maxAttempts = options?.retryTransient === true ? 2 : 1;
+        const requestId = createAdminDiagnosticRequestId("adminReadOrders");
 
-        try {
-          const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
-          const adminSessionToken = String(
-            sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-          ).trim();
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
+            const adminSessionToken = String(
+              sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+            ).trim();
 
           if (adminReadStatusEl && !silent) {
             setAdminStatusPanelVisible(true);
@@ -8817,6 +8904,7 @@
                 dateEnd: String(options?.dateEnd || ""),
                 page: Math.max(1, Number(options?.page) || 1),
                 pageSize: ADMIN_ORDERS_PER_PAGE,
+                requestId,
               }),
             },
             ADMIN_READ_ORDERS_TIMEOUT_MS,
@@ -8847,7 +8935,12 @@
             payload.action !== "adminReadOrders" ||
             !Array.isArray(payload.orders)
           ) {
-            throw new Error("ADMIN_ORDERS_READ_FAILED");
+            const readError = new Error(
+              String(payload?.error || "ADMIN_ORDERS_READ_FAILED"),
+            );
+            readError.retryable = payload?.diagnostic?.retryable === true;
+            readError.diagnostic = payload?.diagnostic || null;
+            throw readError;
           }
 
           const orders = payload.orders;
@@ -8884,13 +8977,35 @@
           if (!silent) setAdminStatusPanelVisible(false);
 
           updateAdminRefreshMeta();
-          return orders;
-        } catch (error) {
-          if (String(error && error.message) === "ADMIN_SESSION_REQUIRED") {
-            sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
-            showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
-            return null;
-          }
+          adminLastOrderReadDiagnostic = {
+            requestId,
+            attempt,
+            step: "ORDERS_READ_COMPLETE",
+          };
+            return orders;
+          } catch (error) {
+            if (String(error && error.message) === "ADMIN_SESSION_REQUIRED") {
+              sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+              showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+              return null;
+            }
+
+            adminLastOrderReadDiagnostic = {
+              requestId,
+              attempt,
+              step: String(error?.diagnostic?.step || "CLIENT_RESPONSE"),
+              reason: String(
+                error?.diagnostic?.reason || error?.name || "REQUEST_FAILED",
+              ),
+              retryable: isTransientAdminReadClientError(error),
+            };
+            if (
+              attempt < maxAttempts &&
+              isTransientAdminReadClientError(error)
+            ) {
+              await waitForAdminRetry(ADMIN_READ_ORDERS_RETRY_DELAY_MS);
+              continue;
+            }
 
           if (adminReadStatusEl && !silent) {
             setAdminStatusPanelVisible(true);
@@ -8907,8 +9022,10 @@
             );
           }
 
-          return null;
+            return null;
+          }
         }
+        return null;
       }
 
       function fetchAdminOrdersFromGas(options = {}) {
@@ -8955,6 +9072,7 @@
           notificationFilter: currentNotificationFilter,
           ...dateRange,
           page: requestedPage,
+          retryTransient: options?.retryTransient === true,
         });
         if (requestId !== adminOrderQueryRequestId) return false;
         if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
@@ -9007,6 +9125,7 @@
         const synced = await loadAdminOrdersForCurrentView({
           page: adminCurrentPage,
           allowWhileEditing: true,
+          retryTransient: true,
         });
         if (!synced) {
           setAdminRefreshState(false, "重新讀取失敗，請稍後再試。");
@@ -15747,10 +15866,10 @@
           return;
         }
 
-        const productCatalogPromise = fetchAdminProductCatalogFromGas();
         const initialOrdersLoaded = await loadAdminOrdersForCurrentView({
           page: 1,
           allowWhileEditing: true,
+          retryTransient: true,
         });
 
         if (!initialOrdersLoaded) {
@@ -15759,15 +15878,18 @@
               sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
             ).trim()
           ) {
-            await productCatalogPromise;
             return;
           }
+          const diagnosticId = String(
+            adminLastOrderReadDiagnostic?.requestId || "",
+          ).trim();
           showAdminAuthOverlay(
-            "⚠️ 訂單讀取暫時失敗，請按下方重新讀取訂單。",
+            `⚠️ 訂單讀取暫時失敗，請按下方重新讀取訂單。${
+              diagnosticId ? `\n診斷編號：${diagnosticId}` : ""
+            }`,
             false,
             true,
           );
-          await productCatalogPromise;
           return;
         }
 
@@ -15777,6 +15899,7 @@
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
         hideAdminAuthOverlay();
+        const productCatalogPromise = fetchAdminProductCatalogFromGas();
         loadAdminCustomerDirectory().catch(() => {});
         await recoverPendingAdminCreateOrderOnLoad();
         await productCatalogPromise;
