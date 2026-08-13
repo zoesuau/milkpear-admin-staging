@@ -6116,12 +6116,11 @@
         statusCounts: { pending: 0, notice: 0 },
       };
       let adminOrderQueryRequestId = 0;
+      let adminOrderFetchPromise = null;
       const adminOrderQueryCache = new Map();
       let adminLastOrderReadDiagnostic = null;
       let adminOrderSearchTimer = null;
       let adminOrderSearchRequestId = 0;
-      let adminBackgroundRefreshTimer = null;
-      let adminBackgroundRefreshRequestId = 0;
       let adminOrderViewLoading = false;
       let adminCreateOrderSubmitting = false;
       let adminCreateOrderChecking = false;
@@ -8346,13 +8345,6 @@
         document
           .getElementById("cards-container")
           ?.setAttribute("aria-busy", adminOrderViewLoading ? "true" : "false");
-        document
-          .querySelectorAll(
-            "#statusFilterRow button, #dateFilterRow button, #dateFilterRow input, #notificationFilterRow button, #searchBar",
-          )
-          .forEach((control) => {
-            control.disabled = adminOrderViewLoading;
-          });
         setAdminRefreshState(
           adminOrderViewLoading,
           adminOrderViewLoading ? "正在載入訂單..." : undefined,
@@ -8931,13 +8923,15 @@
       }
 
       async function performAdminOrdersFetchFromGas(options = {}) {
+        await waitForAdminOrderFetchIdle();
         const silent = options && options.silent === true;
         const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
         const adminReadStatusEl = document.getElementById("adminReadStatus");
         const maxAttempts = options?.retryTransient === true ? 2 : 1;
         const requestId = createAdminDiagnosticRequestId("adminReadOrders");
 
-        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+        const fetchTask = (async () => {
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
           try {
             const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
             const adminSessionToken = String(
@@ -9047,11 +9041,13 @@
           if (!silent) setAdminStatusPanelVisible(false);
 
           updateAdminRefreshMeta();
-          adminLastOrderReadDiagnostic = {
-            requestId,
-            attempt,
-            step: "ORDERS_READ_COMPLETE",
-          };
+            adminLastOrderReadDiagnostic = {
+              requestId,
+              attempt,
+              step: "ORDERS_READ_COMPLETE",
+              handlerMs: Math.max(0, Number(payload?.diagnostic?.handlerMs) || 0),
+              stages: payload?.diagnostic?.stages || null,
+            };
             return orders;
           } catch (error) {
             if (String(error && error.message) === "ADMIN_SESSION_REQUIRED") {
@@ -9095,7 +9091,28 @@
             return null;
           }
         }
-        return null;
+          return null;
+        })();
+        adminOrderFetchPromise = fetchTask;
+        try {
+          return await fetchTask;
+        } finally {
+          if (adminOrderFetchPromise === fetchTask) {
+            adminOrderFetchPromise = null;
+          }
+        }
+      }
+
+      async function waitForAdminOrderFetchIdle() {
+        while (adminOrderFetchPromise) {
+          const activeFetch = adminOrderFetchPromise;
+          try {
+            await activeFetch;
+          } catch (error) {
+            // 既有請求的錯誤由其發起流程處理；此處只負責序列化。
+          }
+          if (adminOrderFetchPromise === activeFetch) break;
+        }
       }
 
       function fetchAdminOrdersFromGas(options = {}) {
@@ -9160,6 +9177,8 @@
               ? `正在載入第 ${requestedPage} 頁…`
               : "正在載入訂單…",
         );
+        await waitForAdminOrderFetchIdle();
+        if (requestId !== adminOrderQueryRequestId) return false;
         const adminOrders = await fetchAdminOrdersFromGas({
           silent: true,
           viewMode: "filtered",
@@ -9405,50 +9424,12 @@
         }
       }
 
-      function refreshAdminOrdersInBackground() {
-        if (adminBackgroundRefreshTimer) {
-          window.clearTimeout(adminBackgroundRefreshTimer);
-        }
-        const requestId = ++adminBackgroundRefreshRequestId;
-        const queryRequestId = ++adminOrderQueryRequestId;
-        adminBackgroundRefreshTimer = window.setTimeout(async () => {
-          adminBackgroundRefreshTimer = null;
-          const adminOrders = await fetchAdminOrdersFromGas({ silent: true });
-          if (
-            requestId !== adminBackgroundRefreshRequestId ||
-            queryRequestId !== adminOrderQueryRequestId
-          ) return;
-          if (!Array.isArray(adminOrders)) {
-            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
-            return;
-          }
-          if (hasBlockingAdminRefreshWork()) {
-            setAdminRefreshState(false, "背景同步完成；目前編輯中的畫面保持不變。");
-            return;
-          }
-          if (renderAdminOrders(adminOrders)) {
-            updateStatsCounters();
-            applyCurrentFilter();
-            handleBatchCheckChange();
-            updateNotifyButton();
-            applyReadOnlyModeToRealOrders();
-            updateAdminRefreshMeta();
-          } else {
-            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
-          }
-        }, 500);
-      }
-
       function applySingleOrderResponse(
         order,
         restoreState = null,
-        options = {},
       ) {
         invalidateAdminOrderQueryCache();
         if (!replaceAdminOrderLocally(order, restoreState)) return false;
-        if (options.refreshInBackground === true) {
-          refreshAdminOrdersInBackground();
-        }
         return true;
       }
 
@@ -18699,9 +18680,7 @@ ${adminNote}
         adminCreateRequestContext = null;
         adminCreateOrderChecking = false;
         if (
-          !applySingleOrderResponse(result.order, null, {
-            refreshInBackground: true,
-          })
+          !applySingleOrderResponse(result.order, null)
         ) {
           throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
         }
