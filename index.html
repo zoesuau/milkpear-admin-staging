@@ -6076,6 +6076,8 @@
         ORDER_SYSTEM_CONFIG.customerId,
         ORDER_SYSTEM_CONFIG.environment,
       ].join(":");
+      const ADMIN_ORDER_SNAPSHOT_CLIENT_ENABLED =
+        ORDER_SYSTEM_CONFIG.features?.adminOrderSnapshot === true;
       const ADMIN_LINE_STATE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-state`;
       const ADMIN_LINE_NONCE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-nonce`;
       const ADMIN_LINE_CODE_VERIFIER_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-line-code-verifier`;
@@ -6789,9 +6791,11 @@
 
         if (existingSessionToken) {
           showAdminAuthOverlay("正在驗證既有管理員登入狀態...", false);
-          const sessionIsValid = await validateExistingAdminSession();
-          if (!sessionIsValid) return false;
-          showAdminAuthOverlay("登入成功，正在取得訂單快照...", false);
+          if (ADMIN_ORDER_SNAPSHOT_CLIENT_ENABLED) {
+            const sessionIsValid = await validateExistingAdminSession();
+            if (!sessionIsValid) return false;
+            showAdminAuthOverlay("登入成功，正在取得訂單快照...", false);
+          }
           return true;
         }
 
@@ -9368,6 +9372,9 @@
       }
 
       async function fetchAdminOrdersFromGas(options = {}) {
+        if (!ADMIN_ORDER_SNAPSHOT_CLIENT_ENABLED) {
+          return performAdminOrdersFetchFromGas(options);
+        }
         const snapshotOrders = await performAdminOrderSnapshotFetch({
           silent: options?.silent === true,
           forceReload: options?.forceReload === true,

@@ -10,6 +10,9 @@ window.ORDER_SYSTEM_CONFIG = Object.freeze({
   "gasApiUrl": "https://script.google.com/macros/s/AKfycby9r7QgpvOJ7KP_3uVI9eYHkzeJnPVFhP7Z3uQdQBvMogYglPoim79H3HJpjyUAgW57/exec",
   "publicSiteUrl": "https://zoesuau.github.io/milkpear-order-system/",
   "adminSiteUrl": "https://zoesuau.github.io/milkpear-admin-system",
+  "features": {
+    "adminOrderSnapshot": false
+  },
   "line": {
     "liffId": "2010333281-Ra5txFF3",
     "loginChannelId": "2010484376"
