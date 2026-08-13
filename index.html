@@ -76,6 +76,34 @@
         color: #b91c1c;
       }
 
+      .admin-order-sync-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .admin-order-sync-row .gas-test-status {
+        flex: 1;
+      }
+
+      .admin-order-sync-retry {
+        flex: 0 0 auto;
+        min-height: 34px;
+        padding: 0 12px;
+        border: 1px solid #4f7f63;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #356448;
+        font-size: 13px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .admin-order-sync-retry.hidden {
+        display: none;
+      }
+
       .admin-auth-overlay {
         position: fixed;
         inset: 0;
@@ -1357,24 +1385,8 @@
       }
 
       .customer-search-row .form-control {
-        flex: 1 1 70%;
+        flex: 1 1 100%;
         min-width: 0;
-      }
-
-      .customer-search-confirm {
-        flex: 0 0 30%;
-        min-width: 86px;
-        border: none;
-        border-radius: 8px;
-        background: #4f7f63;
-        color: #fff;
-        cursor: pointer;
-        font-size: 14px;
-        font-weight: 900;
-      }
-
-      .customer-search-confirm:active {
-        background: #3d634d;
       }
 
       .customer-search-results {
@@ -1408,6 +1420,16 @@
       .customer-result-button.is-selected {
         background: #eef7f1;
         border-color: #4f7f63;
+      }
+      .customer-results-more {
+        width: 100%;
+        min-height: 42px;
+        border: 1px solid #8fb6a0;
+        border-radius: 8px;
+        background: #ffffff;
+        color: #356448;
+        cursor: pointer;
+        font-weight: 900;
       }
 
       .customer-result-name {
@@ -2011,6 +2033,41 @@
         font-size: 12px;
         line-height: 1.5;
         margin-top: 6px;
+      }
+      .admin-content-buyer-history-status {
+        min-height: 18px;
+        margin-top: 5px;
+        color: #64748b;
+        font-size: 12px;
+        font-weight: 700;
+      }
+      .admin-content-buyer-history-results {
+        display: grid;
+        gap: 6px;
+        margin-top: 4px;
+      }
+      .admin-content-buyer-history-option {
+        width: 100%;
+        padding: 8px 10px;
+        border: 1px solid #dbe5dd;
+        border-radius: 9px;
+        background: #ffffff;
+        color: #334155;
+        cursor: pointer;
+        text-align: left;
+      }
+      .admin-content-buyer-history-option:hover,
+      .admin-content-buyer-history-option:focus-visible {
+        border-color: #4f7f63;
+        background: #eef7f1;
+      }
+      .admin-content-buyer-history-option strong,
+      .admin-content-buyer-history-option small {
+        display: block;
+      }
+      .admin-content-buyer-history-option small {
+        margin-top: 2px;
+        color: #64748b;
       }
       .admin-content-product-row {
         display: flex;
@@ -4563,8 +4620,17 @@
         id="adminStatusPanel"
         aria-live="polite"
       >
-        <div class="gas-test-status" id="adminReadStatus">
-          等待管理員完整訂單讀取…
+        <div class="admin-order-sync-row">
+          <div class="gas-test-status" id="adminReadStatus">
+            等待管理員完整訂單讀取…
+          </div>
+          <button
+            type="button"
+            class="admin-order-sync-retry hidden"
+            id="adminOrderSyncRetryBtn"
+          >
+            重新載入本頁
+          </button>
         </div>
         <div class="gas-test-status" id="adminProductCatalogStatus">
           等待管理員商品目錄讀取…
@@ -5757,13 +5823,6 @@
                   autocomplete="off"
                   placeholder="例如：陳美玲、0912、電話末三碼"
                 />
-                <button
-                  type="button"
-                  id="admin-customer-search-confirm"
-                  class="customer-search-confirm"
-                >
-                  確認
-                </button>
               </div>
               <div
                 id="admin-customer-search-status"
@@ -6023,14 +6082,24 @@
       const ADMIN_LINE_SESSION_TOKEN_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-session-token`;
       const ADMIN_DISPLAY_NAME_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-display-name`;
       const ADMIN_AUTH_TIMEOUT_MS = 60000;
+      const ADMIN_VALIDATE_SESSION_TIMEOUT_MS = 8000;
+      const ADMIN_VALIDATE_SESSION_MAX_RETRIES = 1;
+      const ADMIN_VALIDATE_SESSION_RETRY_DELAY_MS = 800;
       const ADMIN_READ_ORDERS_TIMEOUT_MS = 60000;
+      const ADMIN_LEGACY_ORDER_FALLBACK_TIMEOUT_MS = 12000;
+      const ADMIN_ORDER_SNAPSHOT_TIMEOUT_MS = 8000;
+      const ADMIN_ORDER_SNAPSHOT_MAX_RETRIES = 1;
+      const ADMIN_ORDER_SNAPSHOT_RETRY_DELAY_MS = 800;
+      // GAS 閘道偶爾會先回暫時性 HTML，但原執行仍需約 3～5 秒收尾；
+      // 重試前留足間隔，避免瀏覽器補送與前一個後端執行重疊。
+      const ADMIN_READ_ORDERS_RETRY_DELAY_MS = 6000;
+      const ADMIN_SHIPPING_MANIFEST_CACHE_TTL_MS = 30000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_CHECK_TIMEOUT_MS = 15000;
       const ADMIN_CREATE_AUTO_CHECK_DELAYS_MS = [0, 2500, 6000];
       const ADMIN_CREATE_PENDING_STORAGE_KEY = `${ADMIN_STORAGE_NAMESPACE}:pending-admin-create-v1`;
       const ADMIN_SHIPPING_NOTICE_TIMEOUT_MS = 60000;
-      const ADMIN_INITIAL_LOAD_SLOW_MS = 12000;
 
       let adminProductCatalog = [];
       let adminProductCatalogVersion = "";
@@ -6044,9 +6113,11 @@
       let adminInventoryAdjustmentContext = null;
       let adminInventoryAdjustmentSubmitting = false;
       let adminProductsReady = false;
+      let adminProductCatalogPromise = null;
       let latestAdminOrders = [];
+      let adminOrderWorkspaceLoaded = false;
       let adminOrderReadMeta = {
-        serverFiltered: true,
+        serverFiltered: false,
         totalCount: 0,
         page: 1,
         pageSize: 20,
@@ -6054,17 +6125,30 @@
         statusCounts: { pending: 0, notice: 0 },
       };
       let adminOrderQueryRequestId = 0;
+      let adminOrderFetchPromise = null;
+      let adminOrderSnapshotFetchPromise = null;
+      let adminOrderSnapshotVersion = "";
+      let adminOrderSnapshotManifest = [];
+      let adminOrderSnapshotSource = "";
+      const adminOrderSnapshotChunks = new Map();
+      let adminLastOrderReadDiagnostic = null;
       let adminOrderSearchTimer = null;
       let adminOrderSearchRequestId = 0;
-      let adminBackgroundRefreshTimer = null;
-      let adminBackgroundRefreshRequestId = 0;
+      let adminOrderViewLoading = false;
       let adminCreateOrderSubmitting = false;
       let adminCreateOrderChecking = false;
       let adminCreateRequestContext = null;
       let adminCreateRecoveryPromise = null;
       let adminSelectedCustomer = null;
+      let adminCustomerSearchResults = [];
+      let adminCustomerSearchVisibleCount = 50;
       let adminCustomerSearchTimer = null;
       let adminCustomerSearchRequestId = 0;
+      let adminCustomerDirectory = [];
+      let adminCustomerDirectoryPromise = null;
+      let adminCustomerDirectoryReady = false;
+      const adminContentBuyerHistoryTimers = new WeakMap();
+      const adminContentBuyerHistoryRequestIds = new WeakMap();
       let adminSenderHistoryRequestId = 0;
       const selectedOrderNos = new Set();
       const unconfirmedNotificationOrderNos = new Set();
@@ -6077,6 +6161,8 @@
       const ADMIN_CARD_VIEW_MODE_KEY = `${ADMIN_STORAGE_NAMESPACE}:admin-card-view-mode-v2`;
       const ADMIN_CARD_VIEW_MODES = new Set(["full", "compact", "list"]);
       const ADMIN_ORDER_SEARCH_DEBOUNCE_MS = 350;
+      const ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS = 150;
+      const ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE = 50;
       const OFFSHORE_SHIPPING_KEYWORDS = ["金門", "澎湖", "連江", "馬祖", "綠島"];
       let adminCurrentPage = 1;
       let adminCardViewMode = "full";
@@ -6105,6 +6191,7 @@
       let shippingManifestRemoteCandidates = [];
       let shippingManifestRemoteBatches = [];
       let shippingManifestRemoteRangeKey = "";
+      let shippingManifestRemoteLoadedAt = 0;
       let shippingManifestLoadRequestId = 0;
       const OPEN_NOTIFICATION_STATUSES = new Set([
         "pending_send",
@@ -6237,6 +6324,75 @@
           .join("|")
           .replace(/\s+/g, "")
           .slice(0, 160);
+      }
+
+      function createAdminDiagnosticRequestId(action) {
+        const nonce =
+          typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+            ? crypto.randomUUID().replace(/-/g, "")
+            : `${Date.now()}${Math.random().toString(36).slice(2)}`;
+        return createAdminRequestKey(action, [nonce]);
+      }
+
+      function waitForAdminRetry(delayMs) {
+        return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+      }
+
+      function isTransientAdminReadClientError(error) {
+        if (error?.retryable === true) return true;
+        if (error?.name === "AbortError") return true;
+        return /FAILED(?:_| )TO(?:_| )FETCH|NETWORK|LOAD(?:_| )FAILED|TEMPORAR|TIMEOUT|GATEWAY|RESPONSE_INVALID/i.test(
+          String(error?.message || ""),
+        );
+      }
+
+      async function decodeAdminGzipBase64Json(base64Data) {
+        if (
+          typeof base64Data !== "string" ||
+          typeof DecompressionStream !== "function"
+        ) {
+          throw new Error("ADMIN_ORDERS_COMPRESSED_RESPONSE_UNSUPPORTED");
+        }
+        const binary = atob(base64Data);
+        const bytes = Uint8Array.from(binary, (character) =>
+          character.charCodeAt(0),
+        );
+        const decompressedText = await new Response(
+          new Blob([bytes])
+            .stream()
+            .pipeThrough(new DecompressionStream("gzip")),
+        ).text();
+        return JSON.parse(decompressedText);
+      }
+
+      async function parseAdminOrdersResponse(response) {
+        const responseText = await response.text();
+        try {
+          const envelope = JSON.parse(responseText);
+          if (envelope?.encoding !== "gzip-base64") return envelope;
+          return decodeAdminGzipBase64Json(envelope.data);
+        } catch (parseError) {
+          if (
+            String(parseError?.message || "") ===
+            "ADMIN_ORDERS_COMPRESSED_RESPONSE_UNSUPPORTED"
+          ) {
+            throw parseError;
+          }
+          const isHtmlResponse = /^\s*</.test(responseText);
+          const responseError = new Error(
+            isHtmlResponse
+              ? "ADMIN_ORDERS_GATEWAY_HTML"
+              : "ADMIN_ORDERS_RESPONSE_INVALID",
+          );
+          responseError.retryable = true;
+          responseError.diagnostic = {
+            step: "CLIENT_RESPONSE_PARSE",
+            reason: isHtmlResponse
+              ? "GATEWAY_HTML_RESPONSE"
+              : "INVALID_JSON_RESPONSE",
+          };
+          throw responseError;
+        }
       }
 
       function getAdminCreatePayloadFingerprint(payload) {
@@ -6443,7 +6599,9 @@
           return false;
         }
 
-        try {
+        const maxAttempts = ADMIN_VALIDATE_SESSION_MAX_RETRIES + 1;
+        for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
           const response = await fetchWithTimeout(
             GAS_ORDERS_API_URL,
             {
@@ -6520,6 +6678,75 @@
         }
       }
 
+      async function validateExistingAdminSession() {
+        const adminSessionToken = String(
+          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+        ).trim();
+        if (!adminSessionToken) return false;
+
+        const requestId = createAdminDiagnosticRequestId(
+          "adminValidateSession",
+        );
+        try {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "text/plain;charset=utf-8",
+              },
+              body: JSON.stringify({
+                action: "adminValidateSession",
+                adminSessionToken,
+                requestId,
+              }),
+            },
+            ADMIN_VALIDATE_SESSION_TIMEOUT_MS,
+          );
+          const payload = await response.json();
+          if (
+            payload?.ok === true &&
+            payload?.action === "adminValidateSession" &&
+            payload?.allowed === true
+          ) {
+            const adminDisplayName = String(
+              payload?.admin?.displayName || "",
+            ).trim();
+            if (adminDisplayName) {
+              currentAdminName = adminDisplayName;
+              sessionStorage.setItem(ADMIN_DISPLAY_NAME_KEY, adminDisplayName);
+            }
+            return true;
+          }
+
+          if (payload?.error === "ADMIN_SESSION_REQUIRED") {
+            sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+            showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+            return false;
+          }
+
+            throw new Error(
+              String(payload?.error || "ADMIN_SESSION_VALIDATION_FAILED"),
+            );
+          } catch (error) {
+            if (attempt < maxAttempts) {
+              await waitForAdminRetry(
+                ADMIN_VALIDATE_SESSION_RETRY_DELAY_MS,
+              );
+              continue;
+            }
+            showAdminAuthOverlay(
+              `⚠️ 登入狀態暫時無法確認，請稍後再試。\n診斷編號：${requestId}`,
+              false,
+              false,
+              true,
+            );
+            return false;
+          }
+        }
+        return false;
+      }
+
       async function initAdminAuth() {
         showAdminAuthOverlay("管理員登入確認中...", false);
 
@@ -6562,6 +6789,9 @@
 
         if (existingSessionToken) {
           showAdminAuthOverlay("正在驗證既有管理員登入狀態...", false);
+          const sessionIsValid = await validateExistingAdminSession();
+          if (!sessionIsValid) return false;
+          showAdminAuthOverlay("登入成功，正在取得訂單快照...", false);
           return true;
         }
 
@@ -6593,7 +6823,12 @@
 
         if (tabName === "products") {
           renderProductManagement();
-          if (!adminShippingBatchesLoaded) fetchAdminShippingBatchesFromGas();
+          const catalogTask = adminProductsReady
+            ? Promise.resolve(adminProductCatalog)
+            : fetchAdminProductCatalogFromGas();
+          if (!adminShippingBatchesLoaded) {
+            void catalogTask.then(() => fetchAdminShippingBatchesFromGas());
+          }
         }
         if (tabName === "shippingPrint") {
           renderShippingManifest();
@@ -6931,6 +7166,8 @@
           }
           adminShippingBatches = payload.batches.slice();
           adminShippingBatchesLoaded = true;
+          invalidateAdminOrderDerivedCaches();
+          refreshAdminOrderBatchMetadataLocally(adminShippingBatches);
           document.getElementById("shippingBatchModal")?.classList.remove("open");
           setShippingBatchManagementFeedback("已儲存寄出批次。", "success");
           renderShippingBatchManagement();
@@ -6990,6 +7227,8 @@
             throw new Error(payload?.error || "SHIPPING_BATCH_UPDATE_FAILED");
           }
           adminShippingBatches = payload.batches.slice();
+          invalidateAdminOrderDerivedCaches();
+          refreshAdminOrderBatchMetadataLocally(adminShippingBatches);
           setShippingBatchManagementFeedback(
             `已關閉「${batch.displayLabel}」，既有訂單不受影響。`,
             "success",
@@ -8176,6 +8415,26 @@
         setAdminRefreshState(false, `最後更新：${formatOperationTime(date)}`);
       }
 
+      function setAdminOrderViewLoading(loading, message = "", isError = false) {
+        adminOrderViewLoading = loading === true;
+        const status = document.getElementById("adminReadStatus");
+        const retry = document.getElementById("adminOrderSyncRetryBtn");
+        if (status) {
+          status.className = `gas-test-status${isError ? " error" : ""}`;
+          status.innerText = message;
+        }
+        if (retry) retry.classList.toggle("hidden", !isError);
+        document
+          .getElementById("cards-container")
+          ?.setAttribute("aria-busy", adminOrderViewLoading ? "true" : "false");
+        setAdminRefreshState(
+          adminOrderViewLoading,
+          adminOrderViewLoading ? "正在載入訂單..." : undefined,
+        );
+        setAdminStatusPanelVisible(Boolean(message));
+        updateAdminPagination(adminOrderReadMeta.totalCount);
+      }
+
       function hasBlockingAdminRefreshWork() {
         if (adminBatchProcessing || adminCreateOrderSubmitting) return true;
         return !!document.querySelector(
@@ -8681,15 +8940,252 @@
         return { dateStart: "", dateEnd: "" };
       }
 
-      async function fetchAdminOrdersFromGas(options = {}) {
-        const silent = options && options.silent === true;
-        const adminReadStatusEl = document.getElementById("adminReadStatus");
+      function invalidateAdminOrderDerivedCaches() {
+        adminOrderQueryRequestId += 1;
+        shippingManifestLoadRequestId += 1;
+        shippingManifestRemoteRangeKey = "";
+        shippingManifestRemoteLoadedAt = 0;
+        shippingManifestRemoteOrders = [];
+        shippingManifestRemoteCandidates = [];
+        shippingManifestRemoteBatches = [];
+      }
 
+      function getAdminOrderSnapshotKnownChunks() {
+        return adminOrderSnapshotManifest.map((entry) => ({
+          bucketId: Number(entry?.bucketId),
+          checksum: String(entry?.checksum || ""),
+        }));
+      }
+
+      function flattenAdminOrderSnapshotChunks(manifest) {
+        const orders = [];
+        (manifest || [])
+          .slice()
+          .sort((left, right) => Number(left.bucketId) - Number(right.bucketId))
+          .forEach((entry) => {
+            const bucketOrders = adminOrderSnapshotChunks.get(
+              Number(entry.bucketId),
+            );
+            if (Array.isArray(bucketOrders)) orders.push(...bucketOrders);
+          });
+        return orders.sort((left, right) => {
+          const createdComparison = String(right?.createdAt || "").localeCompare(
+            String(left?.createdAt || ""),
+          );
+          return createdComparison ||
+            String(right?.orderNo || "").localeCompare(String(left?.orderNo || ""));
+        });
+      }
+
+      function attachAdminOrderReadMeta(orders, payload = {}) {
+        Object.defineProperty(orders, "adminReadMeta", {
+          value: {
+            searchMode: false,
+            query: "",
+            truncated: false,
+            serverFiltered: false,
+            totalCount: Math.max(0, Number(payload.orderCount) || orders.length),
+            page: 1,
+            pageSize: Math.max(1, orders.length || ADMIN_ORDERS_PER_PAGE),
+            totalPages: 1,
+            statusCounts: { pending: 0, notice: 0 },
+            snapshotVersion: String(payload.version || ""),
+            snapshotSource: String(payload.source || ""),
+            snapshotStale: payload.stale === true,
+          },
+          enumerable: false,
+        });
+        return orders;
+      }
+
+      async function mergeAdminOrderSnapshotPayload(payload) {
+        if (payload?.source === "drive") {
+          const fallback = await decodeAdminGzipBase64Json(payload.data);
+          if (!Array.isArray(fallback?.orders)) {
+            throw new Error("ADMIN_ORDER_SNAPSHOT_DRIVE_INVALID");
+          }
+          adminOrderSnapshotChunks.clear();
+          adminOrderSnapshotManifest = [];
+          adminOrderSnapshotVersion = String(
+            fallback.version || payload.version || "",
+          );
+          adminOrderSnapshotSource = "drive";
+          return attachAdminOrderReadMeta(fallback.orders.slice(), {
+            ...payload,
+            version: adminOrderSnapshotVersion,
+            orderCount: fallback.orderCount,
+            stale: true,
+          });
+        }
+
+        if (!Array.isArray(payload?.manifest) || !Array.isArray(payload?.chunks)) {
+          throw new Error("ADMIN_ORDER_SNAPSHOT_RESPONSE_INVALID");
+        }
+        for (const chunk of payload.chunks) {
+          if (chunk?.encoding !== "gzip-base64") {
+            throw new Error("ADMIN_ORDER_SNAPSHOT_ENCODING_INVALID");
+          }
+          const decoded = await decodeAdminGzipBase64Json(chunk.data);
+          if (
+            Number(decoded?.bucketId) !== Number(chunk.bucketId) ||
+            !Array.isArray(decoded?.orders)
+          ) {
+            throw new Error("ADMIN_ORDER_SNAPSHOT_CHUNK_INVALID");
+          }
+          adminOrderSnapshotChunks.set(Number(chunk.bucketId), decoded.orders);
+        }
+        const validBucketIds = new Set(
+          payload.manifest.map((entry) => Number(entry.bucketId)),
+        );
+        [...adminOrderSnapshotChunks.keys()].forEach((bucketId) => {
+          if (!validBucketIds.has(bucketId)) adminOrderSnapshotChunks.delete(bucketId);
+        });
+        adminOrderSnapshotManifest = payload.manifest.slice();
+        adminOrderSnapshotVersion = String(payload.version || "");
+        adminOrderSnapshotSource = "firestore";
+        const orders = flattenAdminOrderSnapshotChunks(adminOrderSnapshotManifest);
+        if (orders.length !== Math.max(0, Number(payload.orderCount) || 0)) {
+          throw new Error("ADMIN_ORDER_SNAPSHOT_COUNT_MISMATCH");
+        }
+        return attachAdminOrderReadMeta(orders, payload);
+      }
+
+      async function performAdminOrderSnapshotFetch(options = {}) {
+        if (adminOrderSnapshotFetchPromise) return adminOrderSnapshotFetchPromise;
+        const silent = options?.silent === true;
+        const forceReload = options?.forceReload === true;
+        const adminReadStatusEl = document.getElementById("adminReadStatus");
+        const task = (async () => {
+          const maxAttempts = ADMIN_ORDER_SNAPSHOT_MAX_RETRIES + 1;
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+            const requestId = createAdminDiagnosticRequestId(
+              "adminReadOrderSnapshot",
+            );
+            try {
+              const adminSessionToken = String(
+                sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+              ).trim();
+              if (!GAS_ORDERS_API_URL || !adminSessionToken) {
+                throw new Error("ADMIN_SESSION_REQUIRED");
+              }
+              if (adminReadStatusEl && !silent) {
+                setAdminStatusPanelVisible(true);
+                adminReadStatusEl.className = "gas-test-status";
+                adminReadStatusEl.innerText = "讀取版本化訂單快照中...";
+              }
+              const response = await fetchWithTimeout(
+                GAS_ORDERS_API_URL,
+                {
+                  method: "POST",
+                  headers: { "Content-Type": "text/plain;charset=utf-8" },
+                  body: JSON.stringify({
+                    action: "adminReadOrderSnapshot",
+                    adminSessionToken,
+                    requestId,
+                    knownVersion: forceReload
+                      ? ""
+                      : adminOrderSnapshotVersion,
+                    knownChunks: forceReload
+                      ? []
+                      : getAdminOrderSnapshotKnownChunks(),
+                  }),
+                },
+                ADMIN_ORDER_SNAPSHOT_TIMEOUT_MS,
+              );
+              const payload = await response.json();
+              if (payload?.error === "ADMIN_SESSION_REQUIRED") {
+                sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+                showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+                return null;
+              }
+              if (
+                payload?.ok !== true ||
+                payload?.action !== "adminReadOrderSnapshot"
+              ) {
+                const snapshotError = new Error(
+                  String(payload?.error || "ADMIN_ORDER_SNAPSHOT_READ_FAILED"),
+                );
+                snapshotError.retryable = true;
+                throw snapshotError;
+              }
+              const adminDisplayName = String(
+                payload?.admin?.displayName || "",
+              ).trim();
+              if (adminDisplayName) {
+                currentAdminName = adminDisplayName;
+                sessionStorage.setItem(ADMIN_DISPLAY_NAME_KEY, adminDisplayName);
+              }
+              if (payload.unchanged === true) {
+                adminOrderSnapshotSource = String(payload.source || "firestore");
+                if (adminReadStatusEl && !silent) adminReadStatusEl.innerText = "";
+                if (!silent) setAdminStatusPanelVisible(false);
+                return attachAdminOrderReadMeta(latestAdminOrders.slice(), {
+                  ...payload,
+                  orderCount: latestAdminOrders.length,
+                });
+              }
+              const orders = await mergeAdminOrderSnapshotPayload(payload);
+              adminLastOrderReadDiagnostic = {
+                requestId,
+                attempt,
+                step: "SNAPSHOT_READ_COMPLETE",
+                handlerMs: Math.max(0, Number(payload.elapsedMs) || 0),
+                source: String(payload.source || ""),
+                version: String(payload.version || ""),
+              };
+              if (adminReadStatusEl && !silent) {
+                adminReadStatusEl.className = payload.stale
+                  ? "gas-test-status warning"
+                  : "gas-test-status";
+                adminReadStatusEl.innerText = payload.stale
+                  ? "Firestore 暫時不可用，已改用上一份備援快照。"
+                  : "";
+              }
+              if (!payload.stale && !silent) setAdminStatusPanelVisible(false);
+              updateAdminRefreshMeta();
+              return orders;
+            } catch (error) {
+              adminLastOrderReadDiagnostic = {
+                requestId,
+                attempt,
+                step: "SNAPSHOT_CLIENT_READ",
+                reason: String(error?.message || "REQUEST_FAILED"),
+                retryable: true,
+              };
+              if (attempt < maxAttempts) {
+                await waitForAdminRetry(ADMIN_ORDER_SNAPSHOT_RETRY_DELAY_MS);
+                continue;
+              }
+              return null;
+            }
+          }
+          return null;
+        })();
+        adminOrderSnapshotFetchPromise = task;
         try {
-          const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
-          const adminSessionToken = String(
-            sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-          ).trim();
+          return await task;
+        } finally {
+          if (adminOrderSnapshotFetchPromise === task) {
+            adminOrderSnapshotFetchPromise = null;
+          }
+        }
+      }
+
+      async function performAdminOrdersFetchFromGas(options = {}) {
+        await waitForAdminOrderFetchIdle();
+        const silent = options && options.silent === true;
+        const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
+        const adminReadStatusEl = document.getElementById("adminReadStatus");
+        const maxAttempts = options?.retryTransient === false ? 1 : 2;
+        const requestId = createAdminDiagnosticRequestId("adminReadOrders");
+
+        const fetchTask = (async () => {
+          for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+          try {
+            const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
+            const adminSessionToken = String(
+              sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+            ).trim();
 
           if (adminReadStatusEl && !silent) {
             setAdminStatusPanelVisible(true);
@@ -8711,13 +9207,26 @@
               body: JSON.stringify({
                 action: "adminReadOrders",
                 adminSessionToken,
-                viewMode: "complete",
+                viewMode,
+                query: String(options?.query || ""),
+                statusFilter: String(options?.statusFilter || "全部"),
+                notificationFilter: String(
+                  options?.notificationFilter || "全部",
+                ),
+                dateStart: String(options?.dateStart || ""),
+                dateEnd: String(options?.dateEnd || ""),
+                page: Math.max(1, Number(options?.page) || 1),
+                pageSize: ADMIN_ORDERS_PER_PAGE,
+                requestId,
               }),
             },
-            ADMIN_READ_ORDERS_TIMEOUT_MS,
+            Math.max(
+              1000,
+              Number(options?.timeoutMs) || ADMIN_READ_ORDERS_TIMEOUT_MS,
+            ),
           );
 
-          const payload = await response.json();
+          const payload = await parseAdminOrdersResponse(response);
 
           const adminDisplayName = String(
             payload?.admin?.displayName || "",
@@ -8742,7 +9251,12 @@
             payload.action !== "adminReadOrders" ||
             !Array.isArray(payload.orders)
           ) {
-            throw new Error("ADMIN_ORDERS_READ_FAILED");
+            const readError = new Error(
+              String(payload?.error || "ADMIN_ORDERS_READ_FAILED"),
+            );
+            readError.retryable = payload?.diagnostic?.retryable === true;
+            readError.diagnostic = payload?.diagnostic || null;
+            throw readError;
           }
 
           const orders = payload.orders;
@@ -8779,13 +9293,37 @@
           if (!silent) setAdminStatusPanelVisible(false);
 
           updateAdminRefreshMeta();
-          return orders;
-        } catch (error) {
-          if (String(error && error.message) === "ADMIN_SESSION_REQUIRED") {
-            sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
-            showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
-            return null;
-          }
+            adminLastOrderReadDiagnostic = {
+              requestId,
+              attempt,
+              step: "ORDERS_READ_COMPLETE",
+              handlerMs: Math.max(0, Number(payload?.diagnostic?.handlerMs) || 0),
+              stages: payload?.diagnostic?.stages || null,
+            };
+            return orders;
+          } catch (error) {
+            if (String(error && error.message) === "ADMIN_SESSION_REQUIRED") {
+              sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
+              showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
+              return null;
+            }
+
+            adminLastOrderReadDiagnostic = {
+              requestId,
+              attempt,
+              step: String(error?.diagnostic?.step || "CLIENT_RESPONSE"),
+              reason: String(
+                error?.diagnostic?.reason || error?.name || "REQUEST_FAILED",
+              ),
+              retryable: isTransientAdminReadClientError(error),
+            };
+            if (
+              attempt < maxAttempts &&
+              isTransientAdminReadClientError(error)
+            ) {
+              await waitForAdminRetry(ADMIN_READ_ORDERS_RETRY_DELAY_MS);
+              continue;
+            }
 
           if (adminReadStatusEl && !silent) {
             setAdminStatusPanelVisible(true);
@@ -8802,20 +9340,119 @@
             );
           }
 
+            return null;
+          }
+        }
           return null;
+        })();
+        adminOrderFetchPromise = fetchTask;
+        try {
+          return await fetchTask;
+        } finally {
+          if (adminOrderFetchPromise === fetchTask) {
+            adminOrderFetchPromise = null;
+          }
         }
       }
 
+      async function waitForAdminOrderFetchIdle() {
+        while (adminOrderFetchPromise) {
+          const activeFetch = adminOrderFetchPromise;
+          try {
+            await activeFetch;
+          } catch (error) {
+            // 既有請求的錯誤由其發起流程處理；此處只負責序列化。
+          }
+          if (adminOrderFetchPromise === activeFetch) break;
+        }
+      }
+
+      async function fetchAdminOrdersFromGas(options = {}) {
+        const snapshotOrders = await performAdminOrderSnapshotFetch({
+          silent: options?.silent === true,
+          forceReload: options?.forceReload === true,
+        });
+        if (Array.isArray(snapshotOrders)) return snapshotOrders;
+
+        // 滾動部署與災難備援：快照尚未建立或 Firestore、Drive 同時
+        // 不可用時才允許一次舊版完整讀取。正常頁籤與搜尋永遠不走此路徑。
+        return performAdminOrdersFetchFromGas({
+          silent: options?.silent === true,
+          viewMode: "complete",
+          query: "",
+          statusFilter: "全部",
+          notificationFilter: "全部",
+          dateStart: "",
+          dateEnd: "",
+          page: 1,
+          retryTransient: false,
+          timeoutMs: ADMIN_LEGACY_ORDER_FALLBACK_TIMEOUT_MS,
+        });
+      }
+
       async function loadAdminOrdersForCurrentView(options = {}) {
-        const page = Math.max(1, Number(options?.page ?? adminCurrentPage) || 1);
-        adminCurrentPage = page;
+        if (hasBlockingAdminRefreshWork() && options.allowWhileEditing !== true) {
+          setAdminSearchStatus("目前有訂單正在編輯或處理中，請先儲存或取消。", true);
+          return false;
+        }
+        const requestedPage = Math.max(
+          1,
+          Number(options?.page ?? adminCurrentPage) || 1,
+        );
+        const keyword = String(
+          document.getElementById("searchBar")?.value || "",
+        ).trim();
+        adminCurrentPage = requestedPage;
+        if (adminOrderWorkspaceLoaded && options.forceReload !== true) {
+          updateStatsCounters();
+          applyCurrentFilter();
+          handleBatchCheckChange();
+          updateNotifyButton();
+          applyReadOnlyModeToRealOrders();
+          setAdminOrderViewLoading(false, "");
+          setAdminSearchStatus(
+            keyword
+              ? `找到 ${adminOrderReadMeta.totalCount} 筆，顯示本頁最多 20 筆。`
+              : "",
+          );
+          return true;
+        }
+        const requestId = ++adminOrderQueryRequestId;
+        setAdminOrderViewLoading(
+          true,
+          options.forceReload === true
+            ? "正在重新載入完整訂單…"
+            : "正在載入完整訂單…",
+        );
+        await waitForAdminOrderFetchIdle();
+        if (requestId !== adminOrderQueryRequestId) return false;
+        const adminOrders = await fetchAdminOrdersFromGas({
+          silent: true,
+          forceReload: options.forceReload === true,
+          retryTransient: options?.retryTransient !== false,
+        });
+        if (requestId !== adminOrderQueryRequestId) return false;
+        if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
+          setAdminOrderViewLoading(
+            false,
+            "本次訂單載入失敗，原本畫面已保留；可直接重試。",
+            true,
+          );
+          setAdminSearchStatus("載入失敗，請稍後再試。", true);
+          return false;
+        }
+        adminOrderWorkspaceLoaded = true;
+        adminCurrentPage = requestedPage;
         updateStatsCounters();
         applyCurrentFilter();
         handleBatchCheckChange();
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
-        const keyword = String(document.getElementById("searchBar")?.value || "").trim();
-        setAdminSearchStatus(keyword ? `已從完整訂單中找到 ${getFilteredAdminCards().length} 筆。` : "");
+        setAdminOrderViewLoading(false, "");
+        updateAdminRefreshMeta();
+        setAdminSearchStatus(
+          keyword ? `找到 ${adminOrderReadMeta.totalCount} 筆，顯示本頁最多 20 筆。` : "",
+        );
         return true;
       }
 
@@ -8825,27 +9462,11 @@
           return;
         }
 
-        setAdminRefreshState(true, "正在重新整理訂單...");
-        const requestId = ++adminOrderQueryRequestId;
-        const adminOrders = await fetchAdminOrdersFromGas();
-        if (requestId !== adminOrderQueryRequestId) return;
-        if (!Array.isArray(adminOrders)) {
-          setAdminRefreshState(false, "重新整理失敗，請稍後再試。");
-          return;
-        }
-
-        if (!renderAdminOrders(adminOrders)) {
-          setAdminRefreshState(false, "重新整理失敗，請稍後再試。");
-          return;
-        }
-
-        updateStatsCounters();
-        syncAdminSearchMatches();
-        applyCurrentFilter();
-        handleBatchCheckChange();
-        updateNotifyButton();
-        applyReadOnlyModeToRealOrders();
-        updateAdminRefreshMeta();
+        invalidateAdminOrderDerivedCaches();
+        await loadAdminOrdersForCurrentView({
+          page: adminCurrentPage,
+          forceReload: true,
+        });
       }
 
       function reloadAdminPage() {
@@ -8864,32 +9485,30 @@
       async function refreshAdminOrdersFromOverlay() {
         setAdminRefreshState(true, "正在重新讀取訂單...");
         showAdminAuthOverlay("正在重新讀取訂單...", false, true, true);
-        const requestId = ++adminOrderQueryRequestId;
-        const adminOrders = await fetchAdminOrdersFromGas();
-        if (requestId !== adminOrderQueryRequestId) return;
-        if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
+        const synced = await loadAdminOrdersForCurrentView({
+          page: adminCurrentPage,
+          allowWhileEditing: true,
+          retryTransient: true,
+          forceReload: true,
+        });
+        if (!synced) {
           setAdminRefreshState(false, "重新讀取失敗，請稍後再試。");
           showAdminAuthOverlay(
-            "⚠️ 管理員完整訂單讀取失敗，請稍後再試。",
+            "⚠️ 本頁訂單讀取失敗，請稍後再試。",
             false,
             true,
           );
           return;
         }
-
-        updateStatsCounters();
-        syncAdminSearchMatches();
-        applyCurrentFilter();
-        handleBatchCheckChange();
-        updateNotifyButton();
-        applyReadOnlyModeToRealOrders();
-        updateAdminRefreshMeta();
         hideAdminAuthOverlay();
       }
       window.refreshAdminOrdersFromOverlay = refreshAdminOrdersFromOverlay;
       window.hideAdminAuthOverlay = hideAdminAuthOverlay;
 
       async function fetchAdminProductCatalogFromGas() {
+        if (adminProductsReady) return adminProductCatalog;
+        if (adminProductCatalogPromise) return adminProductCatalogPromise;
+        adminProductCatalogPromise = (async () => {
         const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
         const adminSessionToken = String(
           sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
@@ -8961,6 +9580,12 @@
           renderProductManagement();
           return null;
         }
+        })();
+        try {
+          return await adminProductCatalogPromise;
+        } finally {
+          adminProductCatalogPromise = null;
+        }
       }
 
       function renderAdminOrders(adminOrders) {
@@ -8992,6 +9617,9 @@
               ),
             },
           };
+          if (adminOrderReadMeta.serverFiltered !== true) {
+            adminOrderWorkspaceLoaded = true;
+          }
           adminCurrentPage = adminOrderReadMeta.page;
           latestAdminOrders = adminOrders.slice();
           if (adminOrders.length === 0) {
@@ -9010,6 +9638,7 @@
           applyCurrentFilter();
           return true;
         } catch (error) {
+          console.error("真實訂單卡渲染失敗", error);
           const adminReadStatusEl = document.getElementById("adminReadStatus");
 
           if (adminReadStatusEl) {
@@ -9021,6 +9650,31 @@
 
           return false;
         }
+      }
+
+      function refreshAdminOrderBatchMetadataLocally(batches) {
+        const batchById = new Map(
+          (Array.isArray(batches) ? batches : [])
+            .map((batch) => [String(batch?.batchId || "").trim(), batch])
+            .filter(([batchId]) => batchId),
+        );
+        latestAdminOrders = latestAdminOrders.map((order) => {
+          const batchId = String(order?.requestedShippingBatchId || "").trim();
+          if (!batchId) return order;
+          const batch = batchById.get(batchId);
+          if (!batch) return order;
+          return {
+            ...order,
+            requestedShippingStartDate: String(
+              batch.shippingStartDate || "",
+            ).trim(),
+            requestedShippingEndDate: String(
+              batch.shippingEndDate || "",
+            ).trim(),
+            requestedShippingSortOrder: Number(batch.sortOrder) || "",
+          };
+        });
+        applyCurrentFilter();
       }
 
       function replaceAdminOrderLocally(order, restoreState = null) {
@@ -9052,49 +9706,12 @@
         }
       }
 
-      function refreshAdminOrdersInBackground() {
-        if (adminBackgroundRefreshTimer) {
-          window.clearTimeout(adminBackgroundRefreshTimer);
-        }
-        const requestId = ++adminBackgroundRefreshRequestId;
-        const queryRequestId = ++adminOrderQueryRequestId;
-        adminBackgroundRefreshTimer = window.setTimeout(async () => {
-          adminBackgroundRefreshTimer = null;
-          const adminOrders = await fetchAdminOrdersFromGas({ silent: true });
-          if (
-            requestId !== adminBackgroundRefreshRequestId ||
-            queryRequestId !== adminOrderQueryRequestId
-          ) return;
-          if (!Array.isArray(adminOrders)) {
-            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
-            return;
-          }
-          if (hasBlockingAdminRefreshWork()) {
-            setAdminRefreshState(false, "背景同步完成；目前編輯中的畫面保持不變。");
-            return;
-          }
-          if (renderAdminOrders(adminOrders)) {
-            updateStatsCounters();
-            applyCurrentFilter();
-            handleBatchCheckChange();
-            updateNotifyButton();
-            applyReadOnlyModeToRealOrders();
-            updateAdminRefreshMeta();
-          } else {
-            setAdminRefreshState(false, "背景同步失敗，可繼續操作並稍後手動重新整理。");
-          }
-        }, 500);
-      }
-
       function applySingleOrderResponse(
         order,
         restoreState = null,
-        options = {},
       ) {
+        invalidateAdminOrderDerivedCaches();
         if (!replaceAdminOrderLocally(order, restoreState)) return false;
-        if (options.refreshInBackground === true) {
-          refreshAdminOrdersInBackground();
-        }
         return true;
       }
 
@@ -9286,8 +9903,15 @@
           .join("");
       }
 
+      function normalizeAdminOrderSearchText(value) {
+        return String(value ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/[,，、；;。．.\s]+/g, "");
+      }
+
       function buildAdminOrderSearchText(order) {
-        return [
+        return normalizeAdminOrderSearchText([
           order?.orderNo,
           order?.recipientName,
           order?.recipientPhone,
@@ -9312,8 +9936,7 @@
         ]
           .map((value) => String(value ?? "").trim())
           .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
+          .join(" "));
       }
 
       function buildAdminOrderFilterCard(order) {
@@ -10124,6 +10747,7 @@
             }
             return;
           }
+          refreshAdminCustomerDirectoryInBackground();
           adminCancelOrderSetSaving(false);
           closeAdminCancelOrderModal();
           if (notificationWarning || notificationStatus !== "sent") {
@@ -10312,6 +10936,98 @@
         `;
       }
 
+      function setAdminContentBuyerHistoryStatus(input, message, isError = false) {
+        const editor = input?.closest(".admin-content-editor");
+        const status = editor?.querySelector(".admin-content-buyer-history-status");
+        if (!status) return;
+        status.innerText = String(message || "");
+        status.style.color = isError ? "#dc2626" : "#64748b";
+      }
+
+      function renderAdminContentBuyerHistory(input, buyers) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        if (!results) return;
+        const options = Array.isArray(buyers) ? buyers.slice(0, 20) : [];
+        results.innerHTML = options
+          .map(
+            (buyer, index) => `
+              <button type="button" class="admin-content-buyer-history-option" data-buyer-index="${index}">
+                <strong>${escapeHtml(buyer.buyerName || "")}｜${escapeHtml(buyer.buyerPhone || "")}</strong>
+                <small>${Number(buyer.historyOrderCount || 0) ? `歷史 ${escapeHtml(String(buyer.historyOrderCount))} 筆` : "歷史資料"}${buyer.lastOrderDate ? `｜最近 ${escapeHtml(buyer.lastOrderDate)}` : ""}</small>
+              </button>
+            `,
+          )
+          .join("");
+        results.querySelectorAll(".admin-content-buyer-history-option").forEach((button) => {
+          button.addEventListener("click", () => {
+            const buyer = options[Number(button.dataset.buyerIndex)];
+            const phoneInput = editor.querySelector(".admin-content-buyer-phone");
+            if (!buyer || !phoneInput) return;
+            input.value = buyer.buyerName || "";
+            phoneInput.value = buyer.buyerPhone || "";
+            results.innerHTML = "";
+            setAdminContentBuyerHistoryStatus(input, "已帶入選定的歷史訂購人資料。");
+          });
+        });
+      }
+
+      async function searchAdminContentBuyerHistory(input, query, requestId) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        if (!editor || !results) return;
+        setAdminContentBuyerHistoryStatus(
+          input,
+          adminCustomerDirectoryReady
+            ? "搜尋歷史訂購人中..."
+            : "第一次正在準備舊客資料...",
+        );
+        try {
+          await loadAdminCustomerDirectory();
+          if (
+            adminContentBuyerHistoryRequestIds.get(input) !== requestId ||
+            String(input.value || "").trim() !== query
+          ) return;
+          const payload = getAdminCustomerDirectorySearchResults(query);
+          renderAdminContentBuyerHistory(input, payload.buyers);
+          setAdminContentBuyerHistoryStatus(
+            input,
+            payload.buyers.length
+              ? `找到 ${payload.buyers.length} 筆，請選擇正確姓名與電話。`
+              : "找不到歷史訂購人，可直接手動輸入。",
+          );
+        } catch (error) {
+          if (adminContentBuyerHistoryRequestIds.get(input) !== requestId) return;
+          results.innerHTML = "";
+          setAdminContentBuyerHistoryStatus(input, "歷史訂購人搜尋失敗，可繼續手動輸入。", true);
+        }
+      }
+
+      function handleAdminContentBuyerHistoryInput(input) {
+        const editor = input?.closest(".admin-content-editor");
+        const results = editor?.querySelector(".admin-content-buyer-history-results");
+        if (!input || !results || input.disabled) return;
+        const previousTimer = adminContentBuyerHistoryTimers.get(input);
+        if (previousTimer) clearTimeout(previousTimer);
+        const requestId = (adminContentBuyerHistoryRequestIds.get(input) || 0) + 1;
+        adminContentBuyerHistoryRequestIds.set(input, requestId);
+        results.innerHTML = "";
+        const query = String(input.value || "").trim();
+        if (!query) {
+          setAdminContentBuyerHistoryStatus(input, "");
+          return;
+        }
+        if (!isValidAdminCustomerSearchQuery(query)) {
+          setAdminContentBuyerHistoryStatus(input, "中文可輸入 1 個字；英數至少 2 碼。");
+          return;
+        }
+        setAdminContentBuyerHistoryStatus(input, "準備搜尋...");
+        const timer = window.setTimeout(() => {
+          searchAdminContentBuyerHistory(input, query, requestId);
+        }, ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS);
+        adminContentBuyerHistoryTimers.set(input, timer);
+      }
+
       function enterAdminContentEdit(card) {
         if (!card || card.dataset.contentEditing === "true") return;
 
@@ -10353,7 +11069,12 @@
             <div class="admin-content-section">
               <div class="admin-content-section-title">2. 訂購人資料</div>
               <div class="admin-content-grid">
-                <div class="admin-content-field"><label>訂購人姓名</label><input class="admin-content-buyer-name" value="${escapeHtml(order.buyerName || "")}" ${lockedAttribute}></div>
+                <div class="admin-content-field full">
+                  <label>訂購人姓名</label>
+                  <input class="admin-content-buyer-name" value="${escapeHtml(order.buyerName || "")}" autocomplete="off" oninput="handleAdminContentBuyerHistoryInput(this)" ${lockedAttribute}>
+                  <div class="admin-content-buyer-history-status" aria-live="polite"></div>
+                  <div class="admin-content-buyer-history-results"></div>
+                </div>
                 <div class="admin-content-field"><label>訂購人電話</label><input class="admin-content-buyer-phone" value="${escapeHtml(order.buyerPhone || "")}" ${lockedAttribute}></div>
               </div>
             </div>
@@ -10759,9 +11480,11 @@
             ) {
               throw new Error("ORDER_CONTENT_REFRESH_FAILED");
             }
+            refreshAdminCustomerDirectoryInBackground();
             return;
           }
 
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             throw new Error("ORDER_CONTENT_REFRESH_FAILED");
@@ -10774,6 +11497,7 @@
           restoreAdminOrderCardAfterRender(
             restoreState || { orderNo: savedOrderNo },
           );
+          refreshAdminCustomerDirectoryInBackground();
         } catch (error) {
           saveButton.disabled = false;
           saveButton.innerText = "儲存內容";
@@ -11129,6 +11853,7 @@
           }
 
           adminNoteSetFeedback(editor, "已寫入，正在重新讀取訂單…");
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             if (!sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY)) {
@@ -11885,6 +12610,7 @@
             return;
           }
 
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             adminMarkOrderShippedSetSaving(card, panel, false);
@@ -11989,6 +12715,7 @@
       }
 
       async function adminWorkflowRefreshOrdersAfterSave(editor, restoreState) {
+          invalidateAdminOrderDerivedCaches();
         const adminOrders = await fetchAdminOrdersFromGas();
         if (!Array.isArray(adminOrders)) {
           adminWorkflowSetSaving(editor, false);
@@ -12345,6 +13072,7 @@
             }
             return;
           }
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             adminShippingDateNoticeSetSaving(card, false);
@@ -12778,6 +13506,7 @@
             return;
           }
 
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             throw new Error("NOTIFICATION_REFRESH_FAILED");
@@ -13411,20 +14140,22 @@
         return applyShippingManifestOrdering(baseOrders);
       }
 
-      function mapShippingManifestRemoteOrder(candidate, candidateIndex) {
-        const manifest = candidate?.fields || candidate || {};
+      function mapShippingManifestRemoteOrder(sourceOrder, candidateIndex) {
+        const manifest = sourceOrder?.fields || sourceOrder || {};
         return {
-          orderNo: candidate?.orderNo,
+          orderNo: sourceOrder?.orderNo,
           createdAt: manifest.createdAt,
           orderSource: manifest.orderSource,
           showOaTextOrderMarker:
             manifest.showOaTextOrderMarker === true,
-          _manifestSourceIndex: candidateIndex,
-          recipientName: candidate?.recipientName,
-          recipientPhone: candidate?.recipientPhone,
-          recipientAddress: candidate?.recipientAddress,
+          _manifestSourceIndex: Number(
+            manifest.sourceIndex ?? candidateIndex,
+          ),
+          recipientName: sourceOrder?.recipientName,
+          recipientPhone: sourceOrder?.recipientPhone,
+          recipientAddress: sourceOrder?.recipientAddress,
           buyerName: manifest.buyerName,
-          buyerPhone: manifest.buyerPhone || candidate?.senderPhone,
+          buyerPhone: manifest.buyerPhone || sourceOrder?.senderPhone,
           itemsSummary: manifest.itemsSummary,
           totalBoxes: manifest.totalBoxes,
           finalAmount: manifest.finalAmount,
@@ -13457,33 +14188,44 @@
         if (!adminSessionToken) return;
         const requestId = ++shippingManifestLoadRequestId;
         const rangeKey = `${startDate}|${endDate}`;
+        if (
+          shippingManifestRemoteRangeKey === rangeKey &&
+          Date.now() - shippingManifestRemoteLoadedAt <
+            ADMIN_SHIPPING_MANIFEST_CACHE_TTL_MS
+        ) {
+          renderShippingManifest();
+          return;
+        }
         try {
-          const response = await fetch(GAS_ORDERS_API_URL, {
+          const diagnosticRequestId = createAdminDiagnosticRequestId(
+            "adminReadShippingManifest",
+          );
+          const response = await fetchWithTimeout(GAS_ORDERS_API_URL, {
             method: "POST",
             headers: { "Content-Type": "text/plain;charset=utf-8" },
             body: JSON.stringify({
-              action: "adminReadEzcatExportCandidates",
+              action: "adminReadShippingManifest",
               adminSessionToken,
               startDate,
               endDate,
+              requestId: diagnosticRequestId,
             }),
-          });
+          }, ADMIN_READ_ORDERS_TIMEOUT_MS);
           const payload = await response.json();
           if (
             requestId !== shippingManifestLoadRequestId ||
             !payload ||
             payload.ok !== true ||
-            payload.action !== "adminReadEzcatExportCandidates" ||
-            !Array.isArray(payload.candidates)
+            payload.action !== "adminReadShippingManifest" ||
+            !Array.isArray(payload.orders)
           ) {
             return;
           }
           shippingManifestRemoteRangeKey = rangeKey;
-          shippingManifestRemoteCandidates = payload.candidates.slice();
-          shippingManifestRemoteBatches = Array.isArray(payload.recentBatches)
-            ? payload.recentBatches.slice()
-            : [];
-          shippingManifestRemoteOrders = payload.candidates.map(
+          shippingManifestRemoteLoadedAt = Date.now();
+          shippingManifestRemoteCandidates = [];
+          shippingManifestRemoteBatches = [];
+          shippingManifestRemoteOrders = payload.orders.map(
             mapShippingManifestRemoteOrder,
           );
           renderShippingManifest();
@@ -14000,7 +14742,7 @@
         adminCurrentPage = 1;
         setActiveFilterButton("dateFilterRow", btnElement);
         document.getElementById("customDateRange")?.classList.remove("active");
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function printShippingManifest() {
@@ -14664,19 +15406,6 @@
         ezcatExportPreviewMode = false;
         setEzcatExportView(false);
         updateEzcatExportSummary();
-
-        const rangeKey = `${startDate}|${endDate}`;
-        if (
-          shippingManifestRemoteRangeKey === rangeKey &&
-          shippingManifestRemoteCandidates.length
-        ) {
-          applyEzcatExportCandidateData(
-            shippingManifestRemoteCandidates,
-            shippingManifestRemoteBatches,
-          );
-          if (feedback) feedback.innerText = "";
-          return;
-        }
 
         const adminSessionToken = String(
           sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
@@ -15405,6 +16134,11 @@
           closeBtn.addEventListener("click", hideAdminAuthOverlay);
         }
         document
+          .getElementById("adminOrderSyncRetryBtn")
+          ?.addEventListener("click", () => {
+            void loadAdminOrdersForCurrentView({ page: adminCurrentPage });
+          });
+        document
           .getElementById("adminRefreshOrdersBtn")
           ?.addEventListener("click", refreshAdminOrdersManually);
         document
@@ -15413,9 +16147,6 @@
         document
           .getElementById("admin-customer-search")
           ?.addEventListener("keydown", handleAdminCustomerSearchKeydown);
-        document
-          .getElementById("admin-customer-search-confirm")
-          ?.addEventListener("click", handleAdminCustomerSearchConfirm);
         document
           .getElementById("new-sender-same-as-recipient")
           ?.addEventListener("change", handleNewOrderSameAsRecipientChange);
@@ -15448,7 +16179,7 @@
             document
               .getElementById("customDateRange")
               ?.classList.remove("active");
-            applyCurrentFilter();
+            void loadAdminOrdersForCurrentView({ page: 1 });
           });
         const shippingManifestDateInput = document.getElementById(
           "shippingManifestDateInput",
@@ -15493,7 +16224,9 @@
             handleShippingManifestRangeChange,
           );
         }
-        handleShippingManifestRangeChange();
+        // 出貨總表屬於另一個頁籤；首頁只初始化畫面，不得與訂單載入並行讀 GAS。
+        // 切到「出貨單列印」或實際變更日期時才由既有事件載入。
+        renderShippingManifest();
 
         bindAdminWorkflowEvents();
         updateCurrentWeekFilterButtonLabel();
@@ -15512,47 +16245,48 @@
           return;
         }
 
-        let initialLoadFinished = false;
-        const initialLoadTimer = window.setTimeout(() => {
-          if (initialLoadFinished) return;
+        const initialOrdersLoaded = await loadAdminOrdersForCurrentView({
+          page: 1,
+          allowWhileEditing: true,
+          retryTransient: true,
+        });
+
+        if (!initialOrdersLoaded) {
+          if (
+            !String(
+              sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
+            ).trim()
+          ) {
+            return;
+          }
+          const diagnosticId = String(
+            adminLastOrderReadDiagnostic?.requestId || "",
+          ).trim();
           showAdminAuthOverlay(
-            "讀取訂單時間較久，網路不穩時可先按下方重新讀取訂單。",
+            `⚠️ 訂單讀取暫時失敗，請按下方重新讀取訂單。${
+              diagnosticId ? `\n診斷編號：${diagnosticId}` : ""
+            }`,
             false,
             true,
           );
-        }, ADMIN_INITIAL_LOAD_SLOW_MS);
-
-        const productCatalogPromise = fetchAdminProductCatalogFromGas();
-        try {
-          const adminOrders = await fetchAdminOrdersFromGas();
-
-          if (!Array.isArray(adminOrders)) {
-            return;
-          }
-
-          const rendered = renderAdminOrders(adminOrders);
-
-          if (!rendered) {
-            showAdminAuthOverlay(
-              "⚠️ 管理員訂單顯示失敗，請按下方重新讀取訂單。",
-              false,
-              true,
-            );
-            return;
-          }
-
-          updateStatsCounters();
-          applyCurrentFilter();
-          handleBatchCheckChange();
-          updateNotifyButton();
-          applyReadOnlyModeToRealOrders();
-          hideAdminAuthOverlay();
-          await recoverPendingAdminCreateOrderOnLoad();
-        } finally {
-          initialLoadFinished = true;
-          window.clearTimeout(initialLoadTimer);
+          return;
         }
-        await productCatalogPromise;
+
+        updateStatsCounters();
+        applyCurrentFilter();
+        handleBatchCheckChange();
+        updateNotifyButton();
+        applyReadOnlyModeToRealOrders();
+        hideAdminAuthOverlay();
+        await recoverPendingAdminCreateOrderOnLoad();
+        const addOrderTrigger = document.querySelector(
+          ".btn-add-order-trigger",
+        );
+        if (addOrderTrigger) {
+          addOrderTrigger.disabled = false;
+          addOrderTrigger.setAttribute("aria-disabled", "false");
+          addOrderTrigger.title = "點擊時讀取最新商品目錄";
+        }
       });
       // ==========================================
       // ✨ 系統一：訂單狀態 badge/class 同步（由系統自動推導）
@@ -15810,7 +16544,7 @@
           setCustomDateRange(start, dateValue);
         }
 
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function moveCustomDateCalendarMonth(offset) {
@@ -15825,7 +16559,7 @@
         currentFilterStatus = status;
         adminCurrentPage = 1;
         setActiveFilterButton("statusFilterRow", btnElement);
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function filterByDateRange(range, btnElement) {
@@ -15848,7 +16582,7 @@
           setCustomCalendarMonth(seed.year, seed.month);
           renderCustomDateCalendar();
         }
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function handleCustomDateRangeChange() {
@@ -15856,14 +16590,14 @@
         adminCurrentPage = 1;
         document.getElementById("customDateRange")?.classList.add("active");
         renderCustomDateCalendar();
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function filterByNotificationMode(mode, btnElement) {
         currentNotificationFilter = mode;
         adminCurrentPage = 1;
         setActiveFilterButton("notificationFilterRow", btnElement);
-        applyCurrentFilter();
+        void loadAdminOrdersForCurrentView({ page: 1 });
       }
 
       function getAdminFilterCardDate(card) {
@@ -16118,14 +16852,14 @@
         }
         const keyword = String(
           document.getElementById("searchBar")?.value ?? "",
-        )
-          .trim()
-          .toLowerCase();
+        );
+        const normalizedKeyword = normalizeAdminOrderSearchText(keyword);
         const filteredCards = latestAdminOrders
           .map(buildAdminOrderFilterCard)
           .filter((card) => {
           const searchMatch =
-            !keyword || String(card.dataset.searchText || "").includes(keyword);
+            !normalizedKeyword ||
+            String(card.dataset.searchText || "").includes(normalizedKeyword);
           return (
             isCardStatusMatched(card) &&
             isCardDateMatched(card) &&
@@ -16185,9 +16919,12 @@
           if (!pagination || !info || !prevButton || !nextButton) return;
           pagination.hidden = totalCount <= ADMIN_ORDERS_PER_PAGE;
           info.innerText = `第 ${startIndex}-${endIndex} 張／共 ${totalCount} 張`;
-          prevButton.disabled = adminBatchProcessing || adminCurrentPage <= 1;
+          prevButton.disabled =
+            adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1;
           nextButton.disabled =
-            adminBatchProcessing || adminCurrentPage >= totalPages;
+            adminBatchProcessing ||
+            adminOrderViewLoading ||
+            adminCurrentPage >= totalPages;
         });
       }
 
@@ -17143,13 +17880,15 @@ ${adminNote}
                 String(checkbox.dataset.orderNo || "").trim(),
               );
             checkbox.disabled =
-              adminBatchProcessing || checkbox.dataset.batchEligible !== "true";
+              adminBatchProcessing ||
+              checkbox.dataset.batchEligible !== "true";
           });
 
         const selectAll = document.getElementById("global-selectAll");
         if (selectAll) {
           selectAll.disabled =
-            adminBatchProcessing || visibleCheckboxes.length === 0;
+            adminBatchProcessing ||
+            visibleCheckboxes.length === 0;
           selectAll.checked =
             visibleCheckboxes.length > 0 &&
             visibleSelectedCount === visibleCheckboxes.length;
@@ -17166,7 +17905,8 @@ ${adminNote}
           batchShippedBtn.innerText = adminBatchProcessing
             ? "處理中…"
             : `標記已寄出並通知（${count}）`;
-          batchShippedBtn.disabled = adminBatchProcessing || !shippedEligible;
+          batchShippedBtn.disabled =
+            adminBatchProcessing || !shippedEligible;
           batchShippedBtn.classList.toggle(
             "enabled",
             !batchShippedBtn.disabled,
@@ -17232,7 +17972,19 @@ ${adminNote}
           syncBatchSelectionUi();
         });
 
-      async function refreshAdminOrdersAfterBatch() {
+      async function refreshAdminOrdersAfterBatch(updatedOrders = null) {
+        invalidateAdminOrderDerivedCaches();
+        if (Array.isArray(updatedOrders) && updatedOrders.length) {
+          const allApplied = updatedOrders.every((order) =>
+            replaceAdminOrderLocally(order),
+          );
+          if (!allApplied) return false;
+          updateStatsCounters();
+          applyCurrentFilter();
+          updateNotifyButton();
+          applyReadOnlyModeToRealOrders();
+          return true;
+        }
         const adminOrders = await fetchAdminOrdersFromGas();
         if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
           return false;
@@ -17304,7 +18056,22 @@ ${adminNote}
             );
           }
 
-          if (!(await refreshAdminOrdersAfterBatch())) {
+          const returnedOrders = Array.isArray(payload?.orders)
+            ? payload.orders
+            : null;
+          const returnedOrderDataIsComplete =
+            returnedOrders &&
+            returnedOrders.length === orderNos.length &&
+            orderNos.every((orderNo) =>
+              returnedOrders.some(
+                (order) => String(order?.orderNo || "") === orderNo,
+              ),
+            );
+          if (
+            !(await refreshAdminOrdersAfterBatch(
+              returnedOrderDataIsComplete ? returnedOrders : null,
+            ))
+          ) {
             throw new Error("BATCH_REFRESH_FAILED");
           }
           selectedOrderNos.clear();
@@ -17336,9 +18103,8 @@ ${adminNote}
       document
         .getElementById("adminPrevPageBtn")
         .addEventListener("click", () => {
-          if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          adminCurrentPage -= 1;
-          applyCurrentFilter();
+          if (adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1) return;
+          void loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 });
         });
 
       document
@@ -17346,35 +18112,36 @@ ${adminNote}
         .addEventListener("click", () => {
           if (
             adminBatchProcessing ||
+            adminOrderViewLoading ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          adminCurrentPage += 1;
-          applyCurrentFilter();
+          void loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 });
         });
 
       document
         .getElementById("adminPrevPageBtnBottom")
-        .addEventListener("click", () => {
-          if (adminBatchProcessing || adminCurrentPage <= 1) return;
-          adminCurrentPage -= 1;
-          applyCurrentFilter();
-          document
-            .getElementById("cards-container")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+        .addEventListener("click", async () => {
+          if (adminBatchProcessing || adminOrderViewLoading || adminCurrentPage <= 1) return;
+          if (await loadAdminOrdersForCurrentView({ page: adminCurrentPage - 1 })) {
+            document
+              .getElementById("cards-container")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
 
       document
         .getElementById("adminNextPageBtnBottom")
-        .addEventListener("click", () => {
+        .addEventListener("click", async () => {
           if (
             adminBatchProcessing ||
+            adminOrderViewLoading ||
             adminCurrentPage >= adminOrderReadMeta.totalPages
           ) return;
-          adminCurrentPage += 1;
-          applyCurrentFilter();
-          document
-            .getElementById("cards-container")
-            ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          if (await loadAdminOrdersForCurrentView({ page: adminCurrentPage + 1 })) {
+            document
+              .getElementById("cards-container")
+              ?.scrollIntoView({ behavior: "smooth", block: "start" });
+          }
         });
 
       // 搜尋功能
@@ -17404,19 +18171,15 @@ ${adminNote}
         adminOrderSearchRequestId += 1;
         adminCurrentPage = 1;
         adminOrderSearchTimer = window.setTimeout(() => {
-          applyCurrentFilter();
-          const count = getFilteredAdminCards().length;
-          setAdminSearchStatus(
-            String(document.getElementById("searchBar")?.value || "").trim()
-              ? `已從完整訂單中找到 ${count} 筆。`
-              : "",
-          );
+          void loadAdminOrdersForCurrentView({ page: 1 });
         }, ADMIN_ORDER_SEARCH_DEBOUNCE_MS);
       }
 
       // 彈窗模組開啟關閉
       function resetAdminCustomerLookup() {
         adminSelectedCustomer = null;
+        adminCustomerSearchResults = [];
+        adminCustomerSearchVisibleCount = ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
         adminCustomerSearchRequestId += 1;
         adminSenderHistoryRequestId += 1;
         if (adminCustomerSearchTimer) {
@@ -17456,14 +18219,20 @@ ${adminNote}
         status.style.color = isError ? "#dc2626" : "#64748b";
       }
 
-      function renderAdminCustomerResults(customers) {
+      function renderAdminCustomerResults(customers, preserveVisibleCount = false) {
         const results = document.getElementById("admin-customer-results");
         if (!results) return;
         if (!Array.isArray(customers) || customers.length === 0) {
+          adminCustomerSearchResults = [];
           results.innerHTML = "";
           return;
         }
-        results.innerHTML = customers
+        adminCustomerSearchResults = customers;
+        if (!preserveVisibleCount) {
+          adminCustomerSearchVisibleCount = ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
+        }
+        const visibleCustomers = customers.slice(0, adminCustomerSearchVisibleCount);
+        results.innerHTML = visibleCustomers
           .map((customer, customerIndex) => {
             const recipientName =
               customer.recipientName || customer.buyerName || "未命名收件人";
@@ -17505,7 +18274,10 @@ ${adminNote}
               </button>
             `;
           })
-          .join("");
+          .join("") +
+          (customers.length > visibleCustomers.length
+            ? `<button type="button" class="customer-results-more">顯示更多（還有 ${customers.length - visibleCustomers.length} 筆）</button>`
+            : "");
         results
           .querySelectorAll(".customer-result-button")
           .forEach((button) => {
@@ -17515,57 +18287,341 @@ ${adminNote}
               if (customer) selectAdminCustomer(customer);
             });
           });
+        results.querySelector(".customer-results-more")?.addEventListener("click", () => {
+          adminCustomerSearchVisibleCount += ADMIN_CUSTOMER_SEARCH_RESULT_PAGE_SIZE;
+          renderAdminCustomerResults(adminCustomerSearchResults, true);
+        });
       }
 
-      async function searchAdminCustomersNow(query) {
-        const requestId = ++adminCustomerSearchRequestId;
-        const normalizedQuery = String(query || "").trim();
-        const queryDigits = normalizedQuery.replace(/\D/g, "");
-        const results = document.getElementById("admin-customer-results");
+      function isValidAdminCustomerSearchQuery(query) {
+        const normalized = String(query || "").replace(/\s+/g, "").trim();
+        if (!normalized) return false;
+        const digits = normalized.replace(/\D/g, "");
+        if (/^[\d()+-]+$/.test(normalized)) return digits.length >= 3;
+        if (/^[A-Za-z0-9]+$/.test(normalized)) return normalized.length >= 2;
+        return Array.from(normalized).length >= 1;
+      }
 
-        if (normalizedQuery.length < 2 && queryDigits.length < 3) {
-          if (results) results.innerHTML = "";
-          setAdminCustomerSearchStatus("至少輸入 2 個字，或 3 碼以上電話。");
-          return;
+      function normalizeAdminCustomerPhone(value) {
+        const phone = String(value || "").replace(/\D/g, "").trim();
+        return /^9\d{8}$/.test(phone) ? `0${phone}` : phone;
+      }
+
+      function getComparableAdminCustomerDate(value) {
+        const text = String(value || "").trim();
+        if (!text) return 0;
+        const time = new Date(text.replace(/\//g, "-")).getTime();
+        return Number.isFinite(time) ? time : 0;
+      }
+
+      function normalizeAdminCustomerAddressCore(value) {
+        let text = String(value || "").replace(/[　\s]+/g, " ").trim();
+        if (!text) return "";
+        text = text
+          .replace(/\s+(?:\d+\s*\*\s*\d+.*)$/i, "")
+          .replace(/\s+(?:特大果?.*|特大.*|大果.*|小果.*|大\*\d+.*)$/i, "")
+          .replace(/\s+(?:[一二三四五六七八九十\d]+[箱盒].*)$/i, "")
+          .replace(/\s+(?:\d{1,2}\s*[aA]\s*.*|\d{1,2}\s*[-\\/]\s*\d+.*)$/i, "")
+          .replace(/\s+(?:.*放賀卡.*|.*賀卡.*|.*檸檬.*|.*百香果.*)$/i, "");
+        return text
+          .replace(/[　\s,，;；。．.]/g, "")
+          .replace(/臺/g, "台")
+          .toLowerCase();
+      }
+
+      function getAdminCustomerLocalDedupeKey(customer, index) {
+        const phone = normalizeAdminCustomerPhone(customer?.recipientPhone);
+        const addressCore = normalizeAdminCustomerAddressCore(
+          customer?.recipientAddress,
+        );
+        if (phone && addressCore) return `${phone}|${addressCore}`;
+        if (phone) return `${phone}|${String(customer?.recipientName || "").trim()}`;
+        if (addressCore) {
+          return `${String(customer?.recipientName || "").trim().toLowerCase()}|${addressCore}`;
         }
+        return String(customer?.customerId || `row-${index}`).trim();
+      }
 
+      function getAdminCustomerLocalSearchMatch(customer, queryLower, queryPhone) {
+        const buyerName = String(customer?.buyerName || "").trim().toLowerCase();
+        const buyerPhone = normalizeAdminCustomerPhone(customer?.buyerPhone);
+        const recipientName = String(customer?.recipientName || "")
+          .trim()
+          .toLowerCase();
+        const recipientPhone = normalizeAdminCustomerPhone(customer?.recipientPhone);
+        const address = String(customer?.recipientAddress || "").trim().toLowerCase();
+        const matchedBySender =
+          (queryLower && buyerName.includes(queryLower)) ||
+          (queryPhone.length >= 3 && buyerPhone.includes(queryPhone));
+        const matchedByRecipient =
+          (queryLower && recipientName.includes(queryLower)) ||
+          (queryPhone.length >= 3 && recipientPhone.includes(queryPhone)) ||
+          (queryLower.length >= 3 && address.includes(queryLower));
+        return {
+          matched: matchedBySender || matchedByRecipient,
+          matchedBySender,
+          matchedByRecipient,
+        };
+      }
+
+      function getAdminCustomerLocalSearchRank(customer, queryLower, queryPhone) {
+        const names = [customer?.buyerName, customer?.recipientName]
+          .map((value) => String(value || "").trim().toLowerCase())
+          .filter(Boolean);
+        const phones = [customer?.buyerPhone, customer?.recipientPhone]
+          .map(normalizeAdminCustomerPhone)
+          .filter(Boolean);
+        if (queryPhone) {
+          if (phones.some((phone) => phone === queryPhone)) return 0;
+          if (phones.some((phone) => phone.startsWith(queryPhone))) return 1;
+          if (phones.some((phone) => phone.includes(queryPhone))) return 2;
+        }
+        if (queryLower) {
+          if (names.some((name) => name === queryLower)) return 0;
+          if (names.some((name) => name.startsWith(queryLower))) return 1;
+          if (names.some((name) => name.includes(queryLower))) return 2;
+          if (
+            queryLower.length >= 2 &&
+            String(customer?.recipientAddress || "").toLowerCase().includes(queryLower)
+          ) return 3;
+        }
+        return 99;
+      }
+
+      function chooseAdminCustomerLocalSummary(current, candidate) {
+        if (!current) return candidate;
+        const currentDate = Math.max(
+          getComparableAdminCustomerDate(current.lastOrderDate),
+          getComparableAdminCustomerDate(current.lastUpdatedAt),
+        );
+        const candidateDate = Math.max(
+          getComparableAdminCustomerDate(candidate.lastOrderDate),
+          getComparableAdminCustomerDate(candidate.lastUpdatedAt),
+        );
+        if (candidateDate > currentDate) return candidate;
+        const currentNameLength = String(
+          current.recipientName || current.buyerName || "",
+        ).length;
+        const candidateNameLength = String(
+          candidate.recipientName || candidate.buyerName || "",
+        ).length;
+        return candidateDate === currentDate && candidateNameLength > currentNameLength
+          ? candidate
+          : current;
+      }
+
+      function dedupeAdminCustomerLocalSummaries(customers) {
+        const grouped = new Map();
+        customers.forEach((customer, index) => {
+          const key = getAdminCustomerLocalDedupeKey(customer, index);
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              best: customer,
+              customerRecordCount: 0,
+              historyOrderCount: 0,
+              matchedBySender: false,
+              matchedByRecipient: false,
+            });
+          }
+          const item = grouped.get(key);
+          if (customer.sourceType === "customer") item.customerRecordCount += 1;
+          if (customer.sourceType === "order") {
+            item.historyOrderCount += Number(customer.historyOrderCount || 1);
+          }
+          item.matchedBySender ||= customer.matchedBySender === true;
+          item.matchedByRecipient ||= customer.matchedByRecipient === true;
+          item.best = chooseAdminCustomerLocalSummary(item.best, customer);
+        });
+        return [...grouped.values()].map((item) => ({
+          ...item.best,
+          duplicateCount: item.customerRecordCount,
+          historyOrderCount: item.historyOrderCount,
+          matchedBySender: item.matchedBySender,
+          matchedByRecipient: item.matchedByRecipient,
+        }));
+      }
+
+      function buildAdminBuyerLocalSearchResults(matches) {
+        const grouped = new Map();
+        matches.forEach((customer) => {
+          const buyerName = String(customer?.buyerName || "").trim();
+          const buyerPhone = normalizeAdminCustomerPhone(customer?.buyerPhone);
+          if (!buyerName || !buyerPhone) return;
+          const key = `${buyerName.toLowerCase()}|${buyerPhone}`;
+          if (!grouped.has(key)) {
+            grouped.set(key, {
+              buyerName,
+              buyerPhone,
+              lastOrderDate: customer.lastOrderDate || "",
+              historyOrderCount: 0,
+              customerHistoryOrderCount: 0,
+              searchRank: Number(customer.searchRank) || 0,
+            });
+          }
+          const item = grouped.get(key);
+          if (customer.sourceType === "order") {
+            item.historyOrderCount += Number(customer.historyOrderCount || 1);
+          } else {
+            item.customerHistoryOrderCount = Math.max(
+              item.customerHistoryOrderCount,
+              Number(customer.historyOrderCount || 0),
+            );
+          }
+          if (
+            getComparableAdminCustomerDate(customer.lastOrderDate) >
+            getComparableAdminCustomerDate(item.lastOrderDate)
+          ) item.lastOrderDate = customer.lastOrderDate;
+          item.searchRank = Math.min(item.searchRank, Number(customer.searchRank) || 0);
+        });
+        return [...grouped.values()]
+          .map((item) => {
+            if (!item.historyOrderCount) {
+              item.historyOrderCount = item.customerHistoryOrderCount;
+            }
+            delete item.customerHistoryOrderCount;
+            return item;
+          })
+          .sort(
+            (a, b) =>
+              a.searchRank - b.searchRank ||
+              getComparableAdminCustomerDate(b.lastOrderDate) -
+                getComparableAdminCustomerDate(a.lastOrderDate),
+          );
+      }
+
+      function getAdminCustomerDirectorySearchResults(query) {
+        const normalizedQuery = String(query || "").trim();
+        const queryLower = normalizedQuery.toLowerCase();
+        const queryPhone = normalizeAdminCustomerPhone(normalizedQuery);
+        const matches = adminCustomerDirectory.flatMap((customer) => {
+          const match = getAdminCustomerLocalSearchMatch(
+            customer,
+            queryLower,
+            queryPhone,
+          );
+          if (!match.matched) return [];
+          return [{
+            ...customer,
+            ...match,
+            searchRank: getAdminCustomerLocalSearchRank(
+              customer,
+              queryLower,
+              queryPhone,
+            ),
+          }];
+        });
+        const customers = dedupeAdminCustomerLocalSummaries(matches).sort(
+          (a, b) =>
+            getAdminCustomerLocalSearchRank(a, queryLower, queryPhone) -
+              getAdminCustomerLocalSearchRank(b, queryLower, queryPhone) ||
+            Math.max(
+              getComparableAdminCustomerDate(b.lastOrderDate),
+              getComparableAdminCustomerDate(b.lastUpdatedAt),
+            ) -
+              Math.max(
+                getComparableAdminCustomerDate(a.lastOrderDate),
+                getComparableAdminCustomerDate(a.lastUpdatedAt),
+              ),
+        );
+        return {
+          customers,
+          buyers: buildAdminBuyerLocalSearchResults(matches),
+          matchedOrderCount: matches.filter(
+            (customer) => customer.sourceType === "order",
+          ).length,
+        };
+      }
+
+      async function loadAdminCustomerDirectory() {
+        if (adminCustomerDirectoryReady) return adminCustomerDirectory;
+        if (adminCustomerDirectoryPromise) return adminCustomerDirectoryPromise;
         const adminSessionToken = String(
           sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
         ).trim();
-        if (!adminSessionToken) {
-          showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
-          return;
-        }
+        if (!adminSessionToken) throw new Error("ADMIN_SESSION_REQUIRED");
 
-        setAdminCustomerSearchStatus("搜尋舊客戶中...");
-        try {
-          const response = await fetch(GAS_ORDERS_API_URL, {
-            method: "POST",
-            headers: { "Content-Type": "text/plain;charset=utf-8" },
-            body: JSON.stringify({
-              action: "adminSearchCustomers",
-              adminSessionToken,
-              query: normalizedQuery,
-            }),
-          });
+        adminCustomerDirectoryPromise = (async () => {
+          const response = await fetchWithTimeout(
+            GAS_ORDERS_API_URL,
+            {
+              method: "POST",
+              headers: { "Content-Type": "text/plain;charset=utf-8" },
+              body: JSON.stringify({
+                action: "adminReadCustomerDirectory",
+                adminSessionToken,
+              }),
+            },
+            ADMIN_READ_ORDERS_TIMEOUT_MS,
+          );
           const payload = await response.json();
-          if (requestId !== adminCustomerSearchRequestId) return;
           if (
             !response.ok ||
             payload?.ok !== true ||
-            payload?.action !== "adminSearchCustomers" ||
-            !Array.isArray(payload.customers)
+            payload?.action !== "adminReadCustomerDirectory" ||
+            !Array.isArray(payload.directory)
           ) {
             if (payload?.errorCode === "ADMIN_SESSION_REQUIRED") {
               sessionStorage.removeItem(ADMIN_LINE_SESSION_TOKEN_KEY);
               showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
             }
-            throw new Error(payload?.errorCode || "CUSTOMER_SEARCH_FAILED");
+            throw new Error(payload?.errorCode || "CUSTOMER_DIRECTORY_READ_FAILED");
           }
+          adminCustomerDirectory = payload.directory;
+          adminCustomerDirectoryReady = true;
+          return adminCustomerDirectory;
+        })();
+
+        try {
+          return await adminCustomerDirectoryPromise;
+        } finally {
+          adminCustomerDirectoryPromise = null;
+        }
+      }
+
+      function refreshAdminCustomerDirectoryInBackground() {
+        if (adminCustomerDirectoryPromise) {
+          const inFlightDirectory = adminCustomerDirectoryPromise;
+          const refreshAfterCurrentLoad = () => {
+            window.setTimeout(() => {
+              adminCustomerDirectoryReady = false;
+              adminCustomerDirectory = [];
+              loadAdminCustomerDirectory().catch(() => {});
+            }, 0);
+          };
+          inFlightDirectory.then(refreshAfterCurrentLoad, refreshAfterCurrentLoad);
+          return;
+        }
+        adminCustomerDirectoryReady = false;
+        adminCustomerDirectory = [];
+        window.setTimeout(() => {
+          loadAdminCustomerDirectory().catch(() => {});
+        }, 0);
+      }
+
+      async function searchAdminCustomersNow(query) {
+        const requestId = ++adminCustomerSearchRequestId;
+        const normalizedQuery = String(query || "").trim();
+        const results = document.getElementById("admin-customer-results");
+
+        if (!isValidAdminCustomerSearchQuery(normalizedQuery)) {
+          if (results) results.innerHTML = "";
+          setAdminCustomerSearchStatus("中文可輸入 1 個字；英數至少 2 碼，電話至少 3 碼。");
+          return;
+        }
+
+        setAdminCustomerSearchStatus(
+          adminCustomerDirectoryReady
+            ? "搜尋舊客戶中..."
+            : "第一次正在準備舊客資料，完成後會自動顯示...",
+        );
+        try {
+          await loadAdminCustomerDirectory();
+          if (requestId !== adminCustomerSearchRequestId) return;
+          const payload = getAdminCustomerDirectorySearchResults(normalizedQuery);
           renderAdminCustomerResults(payload.customers);
           setAdminCustomerSearchStatus(
             payload.customers.length
-              ? `找到 ${payload.uniqueRecipientCount ?? payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}，以下全部顯示。`
+              ? `找到 ${payload.customers.length} 位收件人${Number(payload.matchedOrderCount || 0) ? `（來自 ${payload.matchedOrderCount} 筆歷史訂單）` : ""}。`
               : "找不到符合客戶；建立訂單後會新增到客戶主檔。",
           );
         } catch (error) {
@@ -17576,6 +18632,7 @@ ${adminNote}
       }
 
       function handleAdminCustomerSearchInput(event) {
+        adminCustomerSearchRequestId += 1;
         adminSelectedCustomer = null;
         const selectedPanel = document.getElementById(
           "admin-selected-customer",
@@ -17589,10 +18646,26 @@ ${adminNote}
         }
         if (syncCheckbox) syncCheckbox.checked = false;
         if (adminCustomerSearchTimer) clearTimeout(adminCustomerSearchTimer);
-        setAdminCustomerSearchStatus("輸入完成後按確認搜尋。");
+        const query = String(event?.target?.value || "").trim();
+        if (!query) {
+          adminCustomerSearchResults = [];
+          const results = document.getElementById("admin-customer-results");
+          if (results) results.innerHTML = "";
+          setAdminCustomerSearchStatus("輸入姓名或電話後會自動搜尋。");
+          return;
+        }
+        if (!isValidAdminCustomerSearchQuery(query)) {
+          setAdminCustomerSearchStatus("中文可輸入 1 個字；英數至少 2 碼，電話至少 3 碼。");
+          return;
+        }
+        setAdminCustomerSearchStatus("準備搜尋...");
+        adminCustomerSearchTimer = window.setTimeout(() => {
+          searchAdminCustomersNow(query);
+        }, ADMIN_CUSTOMER_SEARCH_DEBOUNCE_MS);
       }
 
-      function handleAdminCustomerSearchConfirm() {
+      function runAdminCustomerSearchImmediately() {
+        if (adminCustomerSearchTimer) clearTimeout(adminCustomerSearchTimer);
         const query = document.getElementById("admin-customer-search")?.value || "";
         searchAdminCustomersNow(query);
       }
@@ -17600,7 +18673,7 @@ ${adminNote}
       function handleAdminCustomerSearchKeydown(event) {
         if (event.key !== "Enter") return;
         event.preventDefault();
-        handleAdminCustomerSearchConfirm();
+        runAdminCustomerSearchImmediately();
       }
 
       function normalizeAdminCustomerLookupName(value) {
@@ -17672,28 +18745,14 @@ ${adminNote}
           return;
         }
 
-        const adminSessionToken = String(
-          sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
-        ).trim();
-        if (!adminSessionToken) return;
-
         const requestId = ++adminSenderHistoryRequestId;
-        setNewOrderSenderHistoryStatus("查詢歷史電話中...");
+        setNewOrderSenderHistoryStatus(
+          adminCustomerDirectoryReady
+            ? "查詢歷史電話中..."
+            : "第一次正在準備舊客資料...",
+        );
         try {
-          const response = await fetchWithTimeout(
-            GAS_ORDERS_API_URL,
-            {
-              method: "POST",
-              headers: { "Content-Type": "text/plain;charset=utf-8" },
-              body: JSON.stringify({
-                action: "adminSearchCustomers",
-                adminSessionToken,
-                query: buyerName,
-              }),
-            },
-            ADMIN_READ_ORDERS_TIMEOUT_MS,
-          );
-          const payload = await response.json();
+          await loadAdminCustomerDirectory();
           if (
             requestId !== adminSenderHistoryRequestId ||
             normalizeAdminCustomerLookupName(senderName?.value) !==
@@ -17701,15 +18760,7 @@ ${adminNote}
           ) {
             return;
           }
-          if (
-            !response.ok ||
-            payload?.ok !== true ||
-            payload?.action !== "adminSearchCustomers" ||
-            !Array.isArray(payload.customers)
-          ) {
-            throw new Error(payload?.errorCode || "CUSTOMER_SEARCH_FAILED");
-          }
-
+          const payload = getAdminCustomerDirectorySearchResults(buyerName);
           const resolved = resolveHistoricalBuyerPhone(
             payload.customers,
             buyerName,
@@ -17813,8 +18864,17 @@ ${adminNote}
 
       async function openAddOrderModal() {
         if (!adminProductsReady) {
-          alert("商品目錄讀取失敗，新增訂單暫時無法使用；請重新整理後再試。");
-          return;
+          const trigger = document.querySelector(".btn-add-order-trigger");
+          if (trigger) {
+            trigger.disabled = true;
+            trigger.innerText = "讀取商品中…";
+          }
+          const products = await fetchAdminProductCatalogFromGas();
+          if (trigger) trigger.innerText = "➕ 新增訂單";
+          if (!Array.isArray(products)) {
+            alert("商品目錄讀取失敗，新增訂單暫時無法使用；請稍後再試。");
+            return;
+          }
         }
         resetAdminCustomerLookup();
         if (!document.querySelector("#modal-product-list .product-edit-row")) {
@@ -17834,6 +18894,7 @@ ${adminNote}
         });
         updateNewOrderAmountPreview();
         window.setTimeout(scrollModalToTop, 80);
+        void loadAdminCustomerDirectory().catch(() => {});
       }
 
       function closeAddOrderModal() {
@@ -17950,13 +19011,12 @@ ${adminNote}
         adminCreateRequestContext = null;
         adminCreateOrderChecking = false;
         if (
-          !applySingleOrderResponse(result.order, null, {
-            refreshInBackground: false,
-          })
+          !applySingleOrderResponse(result.order, null)
         ) {
           throw new Error("ORDER_CREATE_LOCAL_UPDATE_FAILED");
         }
         clearPendingAdminCreateRequest();
+        refreshAdminCustomerDirectoryInBackground();
 
         adminCreateOrderSubmitting = false;
         closeAddOrderModal();
