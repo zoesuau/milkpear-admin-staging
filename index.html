@@ -6739,8 +6739,10 @@
         ).trim();
 
         if (existingSessionToken) {
-          showAdminAuthOverlay("正在驗證既有管理員登入狀態...", false);
-          return validateExistingAdminSession();
+          // 訂單讀取端點本身會驗證同一個管理員 session；避免首頁為相同
+          // 權限連續呼叫兩次 GAS，逾期 session 仍由訂單端點安全攔截。
+          showAdminAuthOverlay("正在讀取最新訂單資料...", false);
+          return true;
         }
 
         await startAdminAuth();
