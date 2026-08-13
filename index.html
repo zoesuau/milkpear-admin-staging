@@ -6106,6 +6106,7 @@
       let adminInventoryAdjustmentContext = null;
       let adminInventoryAdjustmentSubmitting = false;
       let adminProductsReady = false;
+      let adminProductCatalogPromise = null;
       let latestAdminOrders = [];
       let adminOrderReadMeta = {
         serverFiltered: true,
@@ -6770,7 +6771,12 @@
 
         if (tabName === "products") {
           renderProductManagement();
-          if (!adminShippingBatchesLoaded) fetchAdminShippingBatchesFromGas();
+          const catalogTask = adminProductsReady
+            ? Promise.resolve(adminProductCatalog)
+            : fetchAdminProductCatalogFromGas();
+          if (!adminShippingBatchesLoaded) {
+            void catalogTask.then(() => fetchAdminShippingBatchesFromGas());
+          }
         }
         if (tabName === "shippingPrint") {
           renderShippingManifest();
@@ -9284,6 +9290,9 @@
       window.hideAdminAuthOverlay = hideAdminAuthOverlay;
 
       async function fetchAdminProductCatalogFromGas() {
+        if (adminProductsReady) return adminProductCatalog;
+        if (adminProductCatalogPromise) return adminProductCatalogPromise;
+        adminProductCatalogPromise = (async () => {
         const baseUrl = String(GAS_ORDERS_API_URL || "").trim();
         const adminSessionToken = String(
           sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY) || "",
@@ -9354,6 +9363,12 @@
           );
           renderProductManagement();
           return null;
+        }
+        })();
+        try {
+          return await adminProductCatalogPromise;
+        } finally {
+          adminProductCatalogPromise = null;
         }
       }
 
@@ -16011,10 +16026,15 @@
         updateNotifyButton();
         applyReadOnlyModeToRealOrders();
         hideAdminAuthOverlay();
-        const productCatalogPromise = fetchAdminProductCatalogFromGas();
-        loadAdminCustomerDirectory().catch(() => {});
         await recoverPendingAdminCreateOrderOnLoad();
-        await productCatalogPromise;
+        const addOrderTrigger = document.querySelector(
+          ".btn-add-order-trigger",
+        );
+        if (addOrderTrigger) {
+          addOrderTrigger.disabled = false;
+          addOrderTrigger.setAttribute("aria-disabled", "false");
+          addOrderTrigger.title = "點擊時讀取最新商品目錄";
+        }
       });
       // ==========================================
       // ✨ 系統一：訂單狀態 badge/class 同步（由系統自動推導）
@@ -18566,8 +18586,17 @@ ${adminNote}
 
       async function openAddOrderModal() {
         if (!adminProductsReady) {
-          alert("商品目錄讀取失敗，新增訂單暫時無法使用；請重新整理後再試。");
-          return;
+          const trigger = document.querySelector(".btn-add-order-trigger");
+          if (trigger) {
+            trigger.disabled = true;
+            trigger.innerText = "讀取商品中…";
+          }
+          const products = await fetchAdminProductCatalogFromGas();
+          if (trigger) trigger.innerText = "➕ 新增訂單";
+          if (!Array.isArray(products)) {
+            alert("商品目錄讀取失敗，新增訂單暫時無法使用；請稍後再試。");
+            return;
+          }
         }
         resetAdminCustomerLookup();
         if (!document.querySelector("#modal-product-list .product-edit-row")) {
@@ -18587,6 +18616,7 @@ ${adminNote}
         });
         updateNewOrderAmountPreview();
         window.setTimeout(scrollModalToTop, 80);
+        void loadAdminCustomerDirectory().catch(() => {});
       }
 
       function closeAddOrderModal() {
