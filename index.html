@@ -6328,9 +6328,31 @@
       function isTransientAdminReadClientError(error) {
         if (error?.retryable === true) return true;
         if (error?.name === "AbortError") return true;
-        return /FAILED(?:_| )TO(?:_| )FETCH|NETWORK|LOAD(?:_| )FAILED|TEMPORAR|TIMEOUT/i.test(
+        return /FAILED(?:_| )TO(?:_| )FETCH|NETWORK|LOAD(?:_| )FAILED|TEMPORAR|TIMEOUT|GATEWAY|RESPONSE_INVALID/i.test(
           String(error?.message || ""),
         );
+      }
+
+      async function parseAdminOrdersResponse(response) {
+        const responseText = await response.text();
+        try {
+          return JSON.parse(responseText);
+        } catch (parseError) {
+          const isHtmlResponse = /^\s*</.test(responseText);
+          const responseError = new Error(
+            isHtmlResponse
+              ? "ADMIN_ORDERS_GATEWAY_HTML"
+              : "ADMIN_ORDERS_RESPONSE_INVALID",
+          );
+          responseError.retryable = true;
+          responseError.diagnostic = {
+            step: "CLIENT_RESPONSE_PARSE",
+            reason: isHtmlResponse
+              ? "GATEWAY_HTML_RESPONSE"
+              : "INVALID_JSON_RESPONSE",
+          };
+          throw responseError;
+        }
       }
 
       function getAdminCreatePayloadFingerprint(payload) {
@@ -8927,7 +8949,7 @@
         const silent = options && options.silent === true;
         const viewMode = options?.viewMode === "filtered" ? "filtered" : "complete";
         const adminReadStatusEl = document.getElementById("adminReadStatus");
-        const maxAttempts = options?.retryTransient === true ? 2 : 1;
+        const maxAttempts = options?.retryTransient === false ? 1 : 2;
         const requestId = createAdminDiagnosticRequestId("adminReadOrders");
 
         const fetchTask = (async () => {
@@ -8974,7 +8996,7 @@
             ADMIN_READ_ORDERS_TIMEOUT_MS,
           );
 
-          const payload = await response.json();
+          const payload = await parseAdminOrdersResponse(response);
 
           const adminDisplayName = String(
             payload?.admin?.displayName || "",
@@ -9187,7 +9209,7 @@
           notificationFilter: currentNotificationFilter,
           ...dateRange,
           page: requestedPage,
-          retryTransient: options?.retryTransient === true,
+          retryTransient: options?.retryTransient !== false,
         });
         if (requestId !== adminOrderQueryRequestId) return false;
         if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
@@ -9382,6 +9404,7 @@
           applyCurrentFilter();
           return true;
         } catch (error) {
+          console.error("真實訂單卡渲染失敗", error);
           const adminReadStatusEl = document.getElementById("adminReadStatus");
 
           if (adminReadStatusEl) {
