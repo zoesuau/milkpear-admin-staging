@@ -6087,7 +6087,6 @@
       // GAS 閘道偶爾會先回暫時性 HTML，但原執行仍需約 3～5 秒收尾；
       // 重試前留足間隔，避免瀏覽器補送與前一個後端執行重疊。
       const ADMIN_READ_ORDERS_RETRY_DELAY_MS = 6000;
-      const ADMIN_ORDER_QUERY_CACHE_TTL_MS = 30000;
       const ADMIN_SHIPPING_MANIFEST_CACHE_TTL_MS = 30000;
       const ADMIN_READ_PRODUCT_CATALOG_TIMEOUT_MS = 60000;
       const ADMIN_CREATE_ORDER_TIMEOUT_MS = 60000;
@@ -6110,8 +6109,9 @@
       let adminProductsReady = false;
       let adminProductCatalogPromise = null;
       let latestAdminOrders = [];
+      let adminOrderWorkspaceLoaded = false;
       let adminOrderReadMeta = {
-        serverFiltered: true,
+        serverFiltered: false,
         totalCount: 0,
         page: 1,
         pageSize: 20,
@@ -6120,7 +6120,6 @@
       };
       let adminOrderQueryRequestId = 0;
       let adminOrderFetchPromise = null;
-      const adminOrderQueryCache = new Map();
       let adminLastOrderReadDiagnostic = null;
       let adminOrderSearchTimer = null;
       let adminOrderSearchRequestId = 0;
@@ -7118,7 +7117,8 @@
           }
           adminShippingBatches = payload.batches.slice();
           adminShippingBatchesLoaded = true;
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
+          refreshAdminOrderBatchMetadataLocally(adminShippingBatches);
           document.getElementById("shippingBatchModal")?.classList.remove("open");
           setShippingBatchManagementFeedback("已儲存寄出批次。", "success");
           renderShippingBatchManagement();
@@ -7178,7 +7178,8 @@
             throw new Error(payload?.error || "SHIPPING_BATCH_UPDATE_FAILED");
           }
           adminShippingBatches = payload.batches.slice();
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
+          refreshAdminOrderBatchMetadataLocally(adminShippingBatches);
           setShippingBatchManagementFeedback(
             `已關閉「${batch.displayLabel}」，既有訂單不受影響。`,
             "success",
@@ -8890,61 +8891,7 @@
         return { dateStart: "", dateEnd: "" };
       }
 
-      function cloneAdminOrdersWithReadMeta(orders) {
-        const clone = Array.isArray(orders)
-          ? orders.map((order) => ({ ...order }))
-          : [];
-        const readMeta = orders?.adminReadMeta;
-        if (readMeta) {
-          Object.defineProperty(clone, "adminReadMeta", {
-            value: {
-              ...readMeta,
-              statusCounts: { ...(readMeta.statusCounts || {}) },
-            },
-            enumerable: false,
-          });
-        }
-        return clone;
-      }
-
-      function getAdminOrderQueryCacheKey(options = {}) {
-        return JSON.stringify({
-          query: String(options.query || "").trim().toLowerCase(),
-          statusFilter: String(options.statusFilter || "全部"),
-          notificationFilter: String(options.notificationFilter || "全部"),
-          dateStart: String(options.dateStart || ""),
-          dateEnd: String(options.dateEnd || ""),
-          page: Math.max(1, Number(options.page) || 1),
-          pageSize: ADMIN_ORDERS_PER_PAGE,
-        });
-      }
-
-      function getCachedAdminOrderQuery(options = {}) {
-        const key = getAdminOrderQueryCacheKey(options);
-        const cached = adminOrderQueryCache.get(key);
-        if (
-          !cached ||
-          Date.now() - cached.savedAt > ADMIN_ORDER_QUERY_CACHE_TTL_MS
-        ) {
-          if (cached) adminOrderQueryCache.delete(key);
-          return null;
-        }
-        return cloneAdminOrdersWithReadMeta(cached.orders);
-      }
-
-      function setCachedAdminOrderQuery(options, orders) {
-        const key = getAdminOrderQueryCacheKey(options);
-        adminOrderQueryCache.set(key, {
-          savedAt: Date.now(),
-          orders: cloneAdminOrdersWithReadMeta(orders),
-        });
-        while (adminOrderQueryCache.size > 50) {
-          adminOrderQueryCache.delete(adminOrderQueryCache.keys().next().value);
-        }
-      }
-
-      function invalidateAdminOrderQueryCache() {
-        adminOrderQueryCache.clear();
+      function invalidateAdminOrderDerivedCaches() {
         adminOrderQueryRequestId += 1;
         shippingManifestLoadRequestId += 1;
         shippingManifestRemoteRangeKey = "";
@@ -9148,15 +9095,15 @@
       }
 
       function fetchAdminOrdersFromGas(options = {}) {
-        const dateRange = getAdminServerDateRange();
         return performAdminOrdersFetchFromGas({
           silent: true,
-          viewMode: "filtered",
-          query: String(document.getElementById("searchBar")?.value || "").trim(),
-          statusFilter: currentFilterStatus,
-          notificationFilter: currentNotificationFilter,
-          ...dateRange,
-          page: adminCurrentPage,
+          viewMode: "complete",
+          query: "",
+          statusFilter: "全部",
+          notificationFilter: "全部",
+          dateStart: "",
+          dateEnd: "",
+          page: 1,
           ...options,
         });
       }
@@ -9170,24 +9117,11 @@
           1,
           Number(options?.page ?? adminCurrentPage) || 1,
         );
-        const requestId = ++adminOrderQueryRequestId;
         const keyword = String(
           document.getElementById("searchBar")?.value || "",
         ).trim();
-        const dateRange = getAdminServerDateRange();
-        const queryOptions = {
-          query: keyword,
-          statusFilter: currentFilterStatus,
-          notificationFilter: currentNotificationFilter,
-          ...dateRange,
-          page: requestedPage,
-        };
-        const cachedOrders =
-          options.forceReload === true
-            ? null
-            : getCachedAdminOrderQuery(queryOptions);
-        if (cachedOrders) {
-          if (!renderAdminOrders(cachedOrders)) return false;
+        adminCurrentPage = requestedPage;
+        if (adminOrderWorkspaceLoaded && options.forceReload !== true) {
           updateStatsCounters();
           applyCurrentFilter();
           handleBatchCheckChange();
@@ -9201,24 +9135,18 @@
           );
           return true;
         }
+        const requestId = ++adminOrderQueryRequestId;
         setAdminOrderViewLoading(
           true,
-          keyword
-            ? `正在搜尋「${keyword}」…`
-            : requestedPage > 1
-              ? `正在載入第 ${requestedPage} 頁…`
-              : "正在載入訂單…",
+          options.forceReload === true
+            ? "正在重新載入完整訂單…"
+            : "正在載入完整訂單…",
         );
         await waitForAdminOrderFetchIdle();
         if (requestId !== adminOrderQueryRequestId) return false;
         const adminOrders = await fetchAdminOrdersFromGas({
           silent: true,
-          viewMode: "filtered",
-          query: keyword,
-          statusFilter: currentFilterStatus,
-          notificationFilter: currentNotificationFilter,
-          ...dateRange,
-          page: requestedPage,
+          viewMode: "complete",
           retryTransient: options?.retryTransient !== false,
         });
         if (requestId !== adminOrderQueryRequestId) return false;
@@ -9231,7 +9159,8 @@
           setAdminSearchStatus("載入失敗，請稍後再試。", true);
           return false;
         }
-        setCachedAdminOrderQuery(queryOptions, adminOrders);
+        adminOrderWorkspaceLoaded = true;
+        adminCurrentPage = requestedPage;
         updateStatsCounters();
         applyCurrentFilter();
         handleBatchCheckChange();
@@ -9251,7 +9180,7 @@
           return;
         }
 
-        invalidateAdminOrderQueryCache();
+        invalidateAdminOrderDerivedCaches();
         await loadAdminOrdersForCurrentView({
           page: adminCurrentPage,
           forceReload: true,
@@ -9278,6 +9207,7 @@
           page: adminCurrentPage,
           allowWhileEditing: true,
           retryTransient: true,
+          forceReload: true,
         });
         if (!synced) {
           setAdminRefreshState(false, "重新讀取失敗，請稍後再試。");
@@ -9405,6 +9335,9 @@
               ),
             },
           };
+          if (adminOrderReadMeta.serverFiltered !== true) {
+            adminOrderWorkspaceLoaded = true;
+          }
           adminCurrentPage = adminOrderReadMeta.page;
           latestAdminOrders = adminOrders.slice();
           if (adminOrders.length === 0) {
@@ -9435,6 +9368,31 @@
 
           return false;
         }
+      }
+
+      function refreshAdminOrderBatchMetadataLocally(batches) {
+        const batchById = new Map(
+          (Array.isArray(batches) ? batches : [])
+            .map((batch) => [String(batch?.batchId || "").trim(), batch])
+            .filter(([batchId]) => batchId),
+        );
+        latestAdminOrders = latestAdminOrders.map((order) => {
+          const batchId = String(order?.requestedShippingBatchId || "").trim();
+          if (!batchId) return order;
+          const batch = batchById.get(batchId);
+          if (!batch) return order;
+          return {
+            ...order,
+            requestedShippingStartDate: String(
+              batch.shippingStartDate || "",
+            ).trim(),
+            requestedShippingEndDate: String(
+              batch.shippingEndDate || "",
+            ).trim(),
+            requestedShippingSortOrder: Number(batch.sortOrder) || "",
+          };
+        });
+        applyCurrentFilter();
       }
 
       function replaceAdminOrderLocally(order, restoreState = null) {
@@ -9470,7 +9428,7 @@
         order,
         restoreState = null,
       ) {
-        invalidateAdminOrderQueryCache();
+        invalidateAdminOrderDerivedCaches();
         if (!replaceAdminOrderLocally(order, restoreState)) return false;
         return true;
       }
@@ -9663,8 +9621,15 @@
           .join("");
       }
 
+      function normalizeAdminOrderSearchText(value) {
+        return String(value ?? "")
+          .trim()
+          .toLowerCase()
+          .replace(/[,，、；;。．.\s]+/g, "");
+      }
+
       function buildAdminOrderSearchText(order) {
-        return [
+        return normalizeAdminOrderSearchText([
           order?.orderNo,
           order?.recipientName,
           order?.recipientPhone,
@@ -9689,8 +9654,7 @@
         ]
           .map((value) => String(value ?? "").trim())
           .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
+          .join(" "));
       }
 
       function buildAdminOrderFilterCard(order) {
@@ -11238,7 +11202,7 @@
             return;
           }
 
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             throw new Error("ORDER_CONTENT_REFRESH_FAILED");
@@ -11607,7 +11571,7 @@
           }
 
           adminNoteSetFeedback(editor, "已寫入，正在重新讀取訂單…");
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             if (!sessionStorage.getItem(ADMIN_LINE_SESSION_TOKEN_KEY)) {
@@ -12364,7 +12328,7 @@
             return;
           }
 
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             adminMarkOrderShippedSetSaving(card, panel, false);
@@ -12469,7 +12433,7 @@
       }
 
       async function adminWorkflowRefreshOrdersAfterSave(editor, restoreState) {
-        invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
         const adminOrders = await fetchAdminOrdersFromGas();
         if (!Array.isArray(adminOrders)) {
           adminWorkflowSetSaving(editor, false);
@@ -12826,7 +12790,7 @@
             }
             return;
           }
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             adminShippingDateNoticeSetSaving(card, false);
@@ -13260,7 +13224,7 @@
             return;
           }
 
-          invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
           const adminOrders = await fetchAdminOrdersFromGas();
           if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
             throw new Error("NOTIFICATION_REFRESH_FAILED");
@@ -16606,14 +16570,14 @@
         }
         const keyword = String(
           document.getElementById("searchBar")?.value ?? "",
-        )
-          .trim()
-          .toLowerCase();
+        );
+        const normalizedKeyword = normalizeAdminOrderSearchText(keyword);
         const filteredCards = latestAdminOrders
           .map(buildAdminOrderFilterCard)
           .filter((card) => {
           const searchMatch =
-            !keyword || String(card.dataset.searchText || "").includes(keyword);
+            !normalizedKeyword ||
+            String(card.dataset.searchText || "").includes(normalizedKeyword);
           return (
             isCardStatusMatched(card) &&
             isCardDateMatched(card) &&
@@ -17727,7 +17691,7 @@ ${adminNote}
         });
 
       async function refreshAdminOrdersAfterBatch() {
-        invalidateAdminOrderQueryCache();
+          invalidateAdminOrderDerivedCaches();
         const adminOrders = await fetchAdminOrdersFromGas();
         if (!Array.isArray(adminOrders) || !renderAdminOrders(adminOrders)) {
           return false;
