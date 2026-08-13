@@ -15978,7 +15978,9 @@
             handleShippingManifestRangeChange,
           );
         }
-        handleShippingManifestRangeChange();
+        // 出貨總表屬於另一個頁籤；首頁只初始化畫面，不得與訂單載入並行讀 GAS。
+        // 切到「出貨單列印」或實際變更日期時才由既有事件載入。
+        renderShippingManifest();
 
         bindAdminWorkflowEvents();
         updateCurrentWeekFilterButtonLabel();
