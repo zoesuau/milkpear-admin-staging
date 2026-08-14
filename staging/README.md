@@ -53,3 +53,8 @@ The authenticated live browser results are recorded in
 [`live-browser-e2e-results-2026-08-14.md`](live-browser-e2e-results-2026-08-14.md).
 The cold/full snapshot path did not meet the production-switching acceptance
 target, so this staging version remains test-only.
+
+The follow-up `batchGet` v2 results are recorded in
+[`live-browser-e2e-batchget-2026-08-14.md`](live-browser-e2e-batchget-2026-08-14.md).
+Version 2 improved cold-load success from 18/20 to 20/20 and reduced P50/P95,
+but it still exceeded the 4/5-second latency targets and remains test-only.
