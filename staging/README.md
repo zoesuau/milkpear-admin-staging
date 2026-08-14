@@ -66,3 +66,10 @@ Its fully instrumented 20-run set completed 20/20 with P50 2.836 seconds and
 P95 3.919 seconds, and the forced Drive fallback also passed. The isolated read
 path therefore meets its latency acceptance target, but production remains
 unchanged until real order-mutation consistency is separately verified.
+
+The isolated mutation-shape results are recorded in
+[`mutation-consistency-2026-08-14.md`](mutation-consistency-2026-08-14.md).
+Seven synthetic scenarios reconciled against Firestore and Drive and the
+376-order baseline was restored. This passes projection consistency only; it
+does not replace a later controlled verification of the real production GAS
+handler-to-snapshot bridge.
