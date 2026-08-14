@@ -34,7 +34,7 @@ Drive, GAS, or LINE meets the production latency acceptance target.
 - Frontend: `https://zoesuau.github.io/milkpear-admin-staging/`
 - Firestore root: `adminOrderSnapshots/sanheyuan-staging`
 - Drive folder: `三合院訂單快照備援 STAGING`
-- Dataset: exactly 376 generated, deidentified orders; currently 1 chunk,
+- Dataset: exactly 379 generated, deidentified orders; currently 1 chunk,
   automatically increasing to 2 or 4 only when compressed size requires it
 
 The project has no Google Sheets scope and no order mutation endpoint. Script

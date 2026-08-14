@@ -28,10 +28,10 @@ const context = { console };
 vm.createContext(context);
 vm.runInContext(source, context);
 const orders = context.stagingBuildSyntheticOrders_();
-assert.equal(orders.length, 376);
+assert.equal(orders.length, 379);
 assert.equal(orders[0].orderNo, "STAGING-0001");
-assert.equal(orders.at(-1).orderNo, "STAGING-0376");
-assert.equal(new Set(orders.map((order) => order.orderNo)).size, 376);
+assert.equal(orders.at(-1).orderNo, "STAGING-0379");
+assert.equal(new Set(orders.map((order) => order.orderNo)).size, 379);
 assert.equal(
   orders.every((order) =>
     String(order.recipientName).startsWith("去識別化收件人"),
@@ -59,7 +59,7 @@ const originalChunkLimit =
   context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_;
 const oneChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(oneChunkPlan.bucketCount, 1);
-assert.equal(oneChunkPlan.buckets[0].length, 376);
+assert.equal(oneChunkPlan.buckets[0].length, 379);
 assert.equal(oneChunkPlan.encodedBuckets.length, 1);
 
 let mutationOrders = orders;
@@ -77,7 +77,7 @@ for (const scenario of [
     scenario,
   );
 }
-assert.equal(mutationOrders.length, 377);
+assert.equal(mutationOrders.length, 380);
 assert.equal(
   context.stagingFindSyntheticOrderIndex_(
     mutationOrders,
@@ -130,7 +130,7 @@ const twoChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(twoChunkPlan.bucketCount, 2);
 assert.equal(
   twoChunkPlan.buckets.reduce((sum, bucket) => sum + bucket.length, 0),
-  376,
+  379,
 );
 
 context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 4000;
@@ -138,7 +138,7 @@ const fourChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(fourChunkPlan.bucketCount, 4);
 assert.equal(
   fourChunkPlan.buckets.reduce((sum, bucket) => sum + bucket.length, 0),
-  376,
+  379,
 );
 
 context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 1;
@@ -220,5 +220,5 @@ assert.deepEqual(manifest.oauthScopes.sort(), [
 
 console.log(
   "staging GAS backend regression checks passed " +
-    "(376 synthetic orders, dynamic 1/2/4 chunks, batchGet)",
+    "(379 synthetic orders, dynamic 1/2/4 chunks, batchGet)",
 );
