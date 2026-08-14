@@ -81,3 +81,11 @@ verifies seven write handlers enter the bridge, proves failed manifest writes
 retain their queue items, and makes zero notification transport calls. The
 pre-cutover engineering gate passes; production deployment remains a separate,
 explicitly authorized operation.
+
+The 379-order cold-start diagnostics are recorded in
+[`live-browser-e2e-v4-379-2026-08-14.md`](live-browser-e2e-v4-379-2026-08-14.md).
+Version 4 completed 20/20 Firestore cold loads with P50 2.889 seconds and P95
+4.032 seconds, plus a successful Drive fallback and Firestore restore. The
+browser phases remain negligible; Firestore and the Apps Script/platform
+network gap dominate. This staging pass does not by itself authorize another
+production switch.
