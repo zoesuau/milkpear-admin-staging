@@ -73,3 +73,11 @@ Seven synthetic scenarios reconciled against Firestore and Drive and the
 376-order baseline was restored. This passes projection consistency only; it
 does not replace a later controlled verification of the real production GAS
 handler-to-snapshot bridge.
+
+The production-candidate handler bridge gate is recorded in
+[`production-handler-bridge-gate-2026-08-14.md`](production-handler-bridge-gate-2026-08-14.md).
+It executes the real candidate queue/flush functions with isolated adapters,
+verifies seven write handlers enter the bridge, proves failed manifest writes
+retain their queue items, and makes zero notification transport calls. The
+pre-cutover engineering gate passes; production deployment remains a separate,
+explicitly authorized operation.
