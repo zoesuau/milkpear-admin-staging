@@ -57,10 +57,26 @@ context.Utilities = {
 };
 const originalChunkLimit =
   context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_;
+const originalInlineLimit =
+  context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_;
 const oneChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(oneChunkPlan.bucketCount, 1);
+assert.equal(oneChunkPlan.inlineInRoot, true);
 assert.equal(oneChunkPlan.buckets[0].length, 379);
 assert.equal(oneChunkPlan.encodedBuckets.length, 1);
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ =
+  oneChunkPlan.encodedBuckets[0].compressedBytes;
+assert.equal(
+  context.stagingBuildSnapshotPlan_(orders, "test-version").bucketCount,
+  1,
+);
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ =
+  oneChunkPlan.encodedBuckets[0].compressedBytes - 1;
+assert.equal(
+  context.stagingBuildSnapshotPlan_(orders, "test-version").bucketCount,
+  2,
+);
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = originalInlineLimit;
 
 let mutationOrders = orders;
 for (const scenario of [
@@ -125,14 +141,16 @@ assert.throws(
   /STAGING_MUTATION_SCENARIO_INVALID/,
 );
 
-context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 7000;
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = 7000;
 const twoChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(twoChunkPlan.bucketCount, 2);
+assert.equal(twoChunkPlan.inlineInRoot, false);
 assert.equal(
   twoChunkPlan.buckets.reduce((sum, bucket) => sum + bucket.length, 0),
   379,
 );
 
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = 4000;
 context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 4000;
 const fourChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(fourChunkPlan.bucketCount, 4);
@@ -147,6 +165,99 @@ assert.throws(
   /STAGING_SNAPSHOT_EXCEEDS_FOUR_CHUNKS/,
 );
 context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = originalChunkLimit;
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = originalInlineLimit;
+
+const capturedWrites = [];
+context.Utilities.formatDate = () => "20260814150000000";
+context.stagingChecksum_ = () => "test-checksum";
+context.stagingFirestoreRequest_ = (method, path, fields) => {
+  capturedWrites.push({ method, path, fields });
+  return {};
+};
+context.stagingWriteDriveFallback_ = () => ({
+  compressedBytes: 12345,
+  data: "drive-payload",
+});
+const inlineWriteResult = context.stagingWriteSyntheticSnapshot_(
+  orders,
+  "inline-format",
+);
+assert.equal(inlineWriteResult.inlineInRoot, true);
+assert.equal(capturedWrites.length, 1);
+assert.equal(
+  capturedWrites[0].path,
+  "adminOrderSnapshots/sanheyuan-staging",
+);
+assert.ok(capturedWrites[0].fields.inlinePayload.bytesValue);
+assert.equal(
+  capturedWrites[0].fields.inlineChecksum.stringValue,
+  "test-checksum",
+);
+assert.equal(
+  JSON.parse(capturedWrites[0].fields.chunksJson.stringValue)[0].inline,
+  true,
+);
+
+capturedWrites.length = 0;
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = 7000;
+const chunkedWriteResult = context.stagingWriteSyntheticSnapshot_(
+  orders,
+  "chunk-format",
+);
+assert.equal(chunkedWriteResult.inlineInRoot, false);
+assert.equal(chunkedWriteResult.bucketCount, 2);
+assert.equal(capturedWrites.length, 3);
+assert.equal(
+  capturedWrites.filter((write) => write.fields.payload).length,
+  2,
+);
+assert.equal(
+  capturedWrites.at(-1).fields.inlinePayload,
+  undefined,
+);
+assert.equal(
+  JSON.parse(capturedWrites.at(-1).fields.chunksJson.stringValue)
+    .every((entry) => entry.inline === false),
+  true,
+);
+context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = originalInlineLimit;
+
+let inlineFetchCount = 0;
+context.UrlFetchApp = {
+  fetch() {
+    inlineFetchCount += 1;
+    throw new Error("inline snapshot must not issue batchGet");
+  },
+};
+const inlineEntry = {
+  bucketId: 0,
+  path: "adminOrderSnapshots/sanheyuan-staging/chunks/b000-s0",
+  inline: true,
+  checksum: "inline-checksum",
+  orderCount: 379,
+  compressedBytes: 12345,
+};
+const inlineChunks = context.stagingReadChunks_([inlineEntry], {
+  inlinePayload: "inline-payload",
+  inlineChecksum: "inline-checksum",
+});
+assert.equal(inlineFetchCount, 0);
+assert.deepEqual(Array.from(inlineChunks, (chunk) => ({
+  bucketId: chunk.bucketId,
+  checksum: chunk.checksum,
+  data: chunk.data,
+})), [{
+  bucketId: 0,
+  checksum: "inline-checksum",
+  data: "inline-payload",
+}]);
+assert.throws(
+  () => context.stagingReadChunks_([inlineEntry], {
+    inlinePayload: "inline-payload",
+    inlineChecksum: "wrong-checksum",
+  }),
+  /STAGING_SNAPSHOT_INLINE_MISMATCH/,
+);
 
 let capturedBatchRequest = null;
 context.stagingFirestoreBaseUrl_ = () =>
@@ -220,5 +331,5 @@ assert.deepEqual(manifest.oauthScopes.sort(), [
 
 console.log(
   "staging GAS backend regression checks passed " +
-    "(379 synthetic orders, dynamic 1/2/4 chunks, batchGet)",
+    "(379 synthetic orders, inline root or dynamic 2/4 chunks, batchGet)",
 );

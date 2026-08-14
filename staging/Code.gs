@@ -3,6 +3,7 @@
 
 var STAGING_SNAPSHOT_SCHEMA_VERSION_ = 1;
 var STAGING_SNAPSHOT_BUCKET_COUNTS_ = [1, 2, 4];
+var STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = 500000;
 var STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 500000;
 var STAGING_SNAPSHOT_ORDER_COUNT_ = 379;
 var STAGING_SNAPSHOT_ROOT_PATH_ = "adminOrderSnapshots/sanheyuan-staging";
@@ -570,16 +571,18 @@ function stagingBuildSnapshotPlan_(orders, version) {
         orders: bucket,
       });
     });
+    var compressedLimit =
+      bucketCount === 1
+        ? STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_
+        : STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_;
     if (
       encodedBuckets.every(function (encoded) {
-        return (
-          encoded.compressedBytes <=
-          STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_
-        );
+        return encoded.compressedBytes <= compressedLimit;
       })
     ) {
       return {
         bucketCount: bucketCount,
+        inlineInRoot: bucketCount === 1,
         buckets: buckets,
         encodedBuckets: encodedBuckets,
       };
@@ -736,21 +739,24 @@ function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
       "/chunks/b" +
       stagingPad_(bucketId, 3) +
       "-s0";
-    stagingFirestoreRequest_("patch", path, {
-      schemaVersion: stagingIntegerField_(STAGING_SNAPSHOT_SCHEMA_VERSION_),
-      version: stagingStringField_(version),
-      bucketId: stagingIntegerField_(bucketId),
-      slot: stagingIntegerField_(0),
-      checksum: stagingStringField_(checksum),
-      orderCount: stagingIntegerField_(bucket.length),
-      compressedBytes: stagingIntegerField_(encoded.compressedBytes),
-      payload: { bytesValue: encoded.data },
-      updatedAt: stagingTimestampField_(new Date()),
-    });
+    if (!snapshotPlan.inlineInRoot) {
+      stagingFirestoreRequest_("patch", path, {
+        schemaVersion: stagingIntegerField_(STAGING_SNAPSHOT_SCHEMA_VERSION_),
+        version: stagingStringField_(version),
+        bucketId: stagingIntegerField_(bucketId),
+        slot: stagingIntegerField_(0),
+        checksum: stagingStringField_(checksum),
+        orderCount: stagingIntegerField_(bucket.length),
+        compressedBytes: stagingIntegerField_(encoded.compressedBytes),
+        payload: { bytesValue: encoded.data },
+        updatedAt: stagingTimestampField_(new Date()),
+      });
+    }
     manifestEntries.push({
       bucketId: bucketId,
       slot: 0,
       path: path,
+      inline: snapshotPlan.inlineInRoot,
       checksum: checksum,
       orderCount: bucket.length,
       compressedBytes: encoded.compressedBytes,
@@ -758,7 +764,7 @@ function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
     totalCompressedBytes += encoded.compressedBytes;
   });
   var now = new Date();
-  stagingFirestoreRequest_("patch", STAGING_SNAPSHOT_ROOT_PATH_, {
+  var rootFields = {
     schemaVersion: stagingIntegerField_(STAGING_SNAPSHOT_SCHEMA_VERSION_),
     currentVersion: stagingStringField_(version),
     orderCount: stagingIntegerField_(orders.length),
@@ -767,7 +773,16 @@ function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
     chunksJson: stagingStringField_(JSON.stringify(manifestEntries)),
     updatedAt: stagingTimestampField_(now),
     containsOrderData: { booleanValue: false },
-  });
+  };
+  if (snapshotPlan.inlineInRoot) {
+    rootFields.inlinePayload = {
+      bytesValue: snapshotPlan.encodedBuckets[0].data,
+    };
+    rootFields.inlineChecksum = stagingStringField_(
+      manifestEntries[0].checksum,
+    );
+  }
+  stagingFirestoreRequest_("patch", STAGING_SNAPSHOT_ROOT_PATH_, rootFields);
   var drive = stagingWriteDriveFallback_(version, orders);
   return {
     ok: true,
@@ -775,6 +790,7 @@ function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
     version: version,
     orderCount: orders.length,
     bucketCount: manifestEntries.length,
+    inlineInRoot: snapshotPlan.inlineInRoot,
     firestoreCompressedBytes: totalCompressedBytes,
     driveCompressedBytes: drive.compressedBytes,
     driveFolderConfigured: true,
@@ -815,18 +831,47 @@ function stagingReadManifest_() {
     ),
     updatedAt: stagingFieldValue_(document, "updatedAt"),
     chunks: JSON.parse(chunksJson),
+    inlinePayload: stagingFieldValue_(document, "inlinePayload"),
+    inlineChecksum: stagingFieldValue_(document, "inlineChecksum"),
   };
 }
 
-function stagingReadChunks_(entries) {
+function stagingReadChunks_(entries, manifest) {
   var requestedEntries = entries || [];
   if (!requestedEntries.length) return [];
+  var inlineChunks = {};
+  var remoteEntries = requestedEntries.filter(function (entry) {
+    if (!entry.inline) return true;
+    var inlinePayload = manifest && manifest.inlinePayload;
+    var inlineChecksum = manifest && manifest.inlineChecksum;
+    if (
+      !inlinePayload ||
+      !inlineChecksum ||
+      inlineChecksum !== entry.checksum
+    ) {
+      throw new Error("STAGING_SNAPSHOT_INLINE_MISMATCH");
+    }
+    inlineChunks[Number(entry.bucketId)] = {
+      bucketId: Number(entry.bucketId),
+      checksum: inlineChecksum,
+      encoding: "gzip-base64",
+      data: inlinePayload,
+      orderCount: Number(entry.orderCount) || 0,
+      compressedBytes: Number(entry.compressedBytes) || 0,
+    };
+    return false;
+  });
+  if (!remoteEntries.length) {
+    return requestedEntries.map(function (entry) {
+      return inlineChunks[Number(entry.bucketId)];
+    });
+  }
   var documentBaseUrl = stagingFirestoreBaseUrl_();
   var documentNamePrefix = documentBaseUrl.replace(
     "https://firestore.googleapis.com/v1/",
     "",
   );
-  var documentNames = requestedEntries.map(function (entry) {
+  var documentNames = remoteEntries.map(function (entry) {
     return documentNamePrefix + "/" + entry.path;
   });
   var response = UrlFetchApp.fetch(
@@ -853,7 +898,8 @@ function stagingReadChunks_(entries) {
       documentsByName[String(result.found.name)] = result.found;
     }
   });
-  return requestedEntries.map(function (entry, index) {
+  var remoteChunks = {};
+  remoteEntries.forEach(function (entry, index) {
     var document = documentsByName[documentNames[index]];
     if (!document) throw new Error("STAGING_SNAPSHOT_CHUNK_MISSING");
     var data = stagingFieldValue_(document, "payload");
@@ -861,7 +907,7 @@ function stagingReadChunks_(entries) {
     if (!data || checksum !== entry.checksum) {
       throw new Error("STAGING_SNAPSHOT_CHUNK_MISMATCH");
     }
-    return {
+    remoteChunks[Number(entry.bucketId)] = {
       bucketId: Number(entry.bucketId),
       checksum: checksum,
       encoding: "gzip-base64",
@@ -870,13 +916,19 @@ function stagingReadChunks_(entries) {
       compressedBytes: Number(entry.compressedBytes) || 0,
     };
   });
+  return requestedEntries.map(function (entry) {
+    return (
+      inlineChunks[Number(entry.bucketId)] ||
+      remoteChunks[Number(entry.bucketId)]
+    );
+  });
 }
 
 function verifyStagingSyntheticSnapshot() {
   assertStagingIdentity_();
   var manifest = stagingReadManifest_();
   var firestoreOrders = [];
-  stagingReadChunks_(manifest.chunks).forEach(function (chunk) {
+  stagingReadChunks_(manifest.chunks, manifest).forEach(function (chunk) {
     var decoded = stagingDecodePayload_(chunk.data);
     firestoreOrders = firestoreOrders.concat(decoded.orders || []);
   });
@@ -973,7 +1025,7 @@ function stagingApplySyntheticMutationScenario_(orders, scenario) {
 function stagingReadAllSyntheticSnapshotOrders_() {
   var manifest = stagingReadManifest_();
   var orders = [];
-  stagingReadChunks_(manifest.chunks).forEach(function (chunk) {
+  stagingReadChunks_(manifest.chunks, manifest).forEach(function (chunk) {
     var decoded = stagingDecodePayload_(chunk.data);
     orders = orders.concat(decoded.orders || []);
   });
@@ -1126,7 +1178,7 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
       return known[Number(entry.bucketId)] !== entry.checksum;
     });
     var chunksStartedAt = Date.now();
-    var chunks = stagingReadChunks_(changedEntries);
+    var chunks = stagingReadChunks_(changedEntries, manifest);
     chunksMs = Date.now() - chunksStartedAt;
     return stagingJsonOutput_({
       ok: true,
