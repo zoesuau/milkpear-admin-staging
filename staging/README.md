@@ -48,3 +48,8 @@ Rollback is isolated: point `customer-config.js` back to the prior staging GAS
 URL (or the placeholder) and redeploy only the staging repository. Production
 Pages, production Apps Script version 248, and production data are not part of
 this deployment.
+
+The authenticated live browser results are recorded in
+[`live-browser-e2e-results-2026-08-14.md`](live-browser-e2e-results-2026-08-14.md).
+The cold/full snapshot path did not meet the production-switching acceptance
+target, so this staging version remains test-only.
