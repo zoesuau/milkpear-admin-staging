@@ -51,7 +51,7 @@ const bridgeSource = [
 
 assert.doesNotMatch(
   bridgeSource,
-  /dispatchOrderNotification_|UrlFetchApp|LINE|pushMessage|MessagingApi/,
+  /dispatchOrderNotification_|UrlFetchApp|LINE_(?:MESSAGING|CHANNEL)|line\.me|pushMessage|MessagingApi/,
   "snapshot bridge regression must not invoke any notification transport",
 );
 

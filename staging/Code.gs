@@ -7,6 +7,11 @@ var STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = 500000;
 var STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 500000;
 var STAGING_SNAPSHOT_ORDER_COUNT_ = 379;
 var STAGING_SNAPSHOT_ROOT_PATH_ = "adminOrderSnapshots/sanheyuan-staging";
+var STAGING_SNAPSHOT_CACHE_KEY_ = "staging-admin-order-snapshot-inline-v1";
+var STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_ =
+  "STAGING_ADMIN_ORDER_SNAPSHOT_CACHE_VERSION";
+var STAGING_SNAPSHOT_CACHE_TTL_SECONDS_ = 300;
+var STAGING_SNAPSHOT_CACHE_MAX_BYTES_ = 90000;
 var STAGING_SESSION_PREFIX_ = "STAGING_ADMIN_SESSION_";
 var STAGING_AUTH_RESULT_PREFIX_ = "STAGING_ADMIN_AUTH_RESULT_";
 var STAGING_SESSION_MAX_AGE_MS_ = 12 * 60 * 60 * 1000;
@@ -782,7 +787,32 @@ function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
       manifestEntries[0].checksum,
     );
   }
+  var properties = PropertiesService.getScriptProperties();
+  properties.setProperty(
+    STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+    version,
+  );
+  try {
+    CacheService.getScriptCache().remove(STAGING_SNAPSHOT_CACHE_KEY_);
+  } catch (cacheInvalidateError) {
+    console.log("STAGING_SNAPSHOT_CACHE_INVALIDATE_FAILED");
+  }
   stagingFirestoreRequest_("patch", STAGING_SNAPSHOT_ROOT_PATH_, rootFields);
+  stagingStoreSnapshotCache_({
+    schemaVersion: STAGING_SNAPSHOT_SCHEMA_VERSION_,
+    version: version,
+    orderCount: orders.length,
+    bucketCount: manifestEntries.length,
+    compressedBytes: totalCompressedBytes,
+    updatedAt: now.toISOString(),
+    chunks: manifestEntries,
+    inlinePayload: snapshotPlan.inlineInRoot
+      ? snapshotPlan.encodedBuckets[0].data
+      : "",
+    inlineChecksum: snapshotPlan.inlineInRoot
+      ? manifestEntries[0].checksum
+      : "",
+  });
   var drive = stagingWriteDriveFallback_(version, orders);
   return {
     ok: true,
@@ -834,6 +864,77 @@ function stagingReadManifest_() {
     inlinePayload: stagingFieldValue_(document, "inlinePayload"),
     inlineChecksum: stagingFieldValue_(document, "inlineChecksum"),
   };
+}
+
+function stagingStoreSnapshotCache_(manifest) {
+  try {
+    if (
+      !manifest ||
+      !manifest.version ||
+      !manifest.inlinePayload ||
+      !manifest.inlineChecksum ||
+      !Array.isArray(manifest.chunks) ||
+      manifest.chunks.length !== 1 ||
+      !manifest.chunks[0].inline
+    ) {
+      return false;
+    }
+    var serialized = JSON.stringify(manifest);
+    var serializedBytes = Utilities.newBlob(serialized).getBytes().length;
+    if (serializedBytes > STAGING_SNAPSHOT_CACHE_MAX_BYTES_) return false;
+    CacheService.getScriptCache().put(
+      STAGING_SNAPSHOT_CACHE_KEY_,
+      serialized,
+      STAGING_SNAPSHOT_CACHE_TTL_SECONDS_,
+    );
+    return true;
+  } catch (cacheWriteError) {
+    console.log("STAGING_SNAPSHOT_CACHE_WRITE_FAILED");
+    return false;
+  }
+}
+
+function stagingReadCachedManifest_() {
+  try {
+    var expectedVersion = stagingProperty_(
+      STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+    );
+    if (!expectedVersion) return null;
+    var cache = CacheService.getScriptCache();
+    var serialized = cache.get(STAGING_SNAPSHOT_CACHE_KEY_);
+    if (!serialized) return null;
+    var manifest = JSON.parse(serialized);
+    if (
+      manifest.version !== expectedVersion ||
+      !manifest.inlinePayload ||
+      !manifest.inlineChecksum ||
+      !Array.isArray(manifest.chunks) ||
+      manifest.chunks.length !== 1 ||
+      !manifest.chunks[0].inline
+    ) {
+      try {
+        cache.remove(STAGING_SNAPSHOT_CACHE_KEY_);
+      } catch (cacheRemoveError) {
+        console.log("STAGING_SNAPSHOT_CACHE_REMOVE_FAILED");
+      }
+      return null;
+    }
+    return manifest;
+  } catch (cacheReadError) {
+    console.log("STAGING_SNAPSHOT_CACHE_READ_FAILED");
+    try {
+      if (cache) cache.remove(STAGING_SNAPSHOT_CACHE_KEY_);
+    } catch (cacheRemoveAfterReadError) {
+      console.log("STAGING_SNAPSHOT_CACHE_REMOVE_FAILED");
+    }
+    return null;
+  }
+}
+
+function clearStagingSnapshotCache() {
+  assertStagingIdentity_();
+  CacheService.getScriptCache().remove(STAGING_SNAPSHOT_CACHE_KEY_);
+  return { ok: true, cacheCleared: true };
 }
 
 function stagingReadChunks_(entries, manifest) {
@@ -1136,20 +1237,32 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
   }
   var manifestMs = 0;
   var chunksMs = 0;
-  var firestoreStartedAt = Date.now();
+  var cacheMs = 0;
+  var cacheHit = false;
+  var firestoreMs = 0;
   try {
     if (stagingProperty_("STAGING_FORCE_FIRESTORE_FAILURE") === "true") {
       throw new Error("STAGING_FORCED_FIRESTORE_FAILURE");
     }
-    var manifestStartedAt = Date.now();
-    var manifest = stagingReadManifest_();
-    manifestMs = Date.now() - manifestStartedAt;
+    var cacheStartedAt = Date.now();
+    var manifest = stagingReadCachedManifest_();
+    cacheMs = Date.now() - cacheStartedAt;
+    cacheHit = !!manifest;
+    if (!manifest) {
+      var manifestStartedAt = Date.now();
+      manifest = stagingReadManifest_();
+      manifestMs = Date.now() - manifestStartedAt;
+      firestoreMs = manifestMs;
+      stagingStoreSnapshotCache_(manifest);
+    }
+    var snapshotTier = cacheHit ? "cache" : "firestore";
     var knownVersion = String(postData.knownVersion || "").trim();
     if (knownVersion && knownVersion === manifest.version) {
       return stagingJsonOutput_({
         ok: true,
         action: "adminReadOrderSnapshot",
         source: "firestore",
+        snapshotTier: snapshotTier,
         unchanged: true,
         version: manifest.version,
         orderCount: manifest.orderCount,
@@ -1158,9 +1271,11 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
         requestId: String(postData.requestId || "").slice(0, 160),
         timing: {
           sessionMs: sessionMs,
+          cacheMs: cacheMs,
+          cacheHit: cacheHit,
           manifestMs: manifestMs,
           chunksMs: 0,
-          firestoreMs: Date.now() - firestoreStartedAt,
+          firestoreMs: firestoreMs,
           driveMs: 0,
         },
         elapsedMs: Date.now() - requestStartedAt,
@@ -1184,6 +1299,7 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
       ok: true,
       action: "adminReadOrderSnapshot",
       source: "firestore",
+      snapshotTier: snapshotTier,
       unchanged: false,
       version: manifest.version,
       schemaVersion: manifest.schemaVersion,
@@ -1204,15 +1320,16 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
       requestId: String(postData.requestId || "").slice(0, 160),
       timing: {
         sessionMs: sessionMs,
+        cacheMs: cacheMs,
+        cacheHit: cacheHit,
         manifestMs: manifestMs,
         chunksMs: chunksMs,
-        firestoreMs: Date.now() - firestoreStartedAt,
+        firestoreMs: firestoreMs,
         driveMs: 0,
       },
       elapsedMs: Date.now() - requestStartedAt,
     });
   } catch (firestoreError) {
-    var firestoreMs = Date.now() - firestoreStartedAt;
     var driveStartedAt = Date.now();
     try {
       var drive = stagingReadDriveFallback_();
@@ -1230,6 +1347,8 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
         requestId: String(postData.requestId || "").slice(0, 160),
         timing: {
           sessionMs: sessionMs,
+          cacheMs: cacheMs,
+          cacheHit: cacheHit,
           manifestMs: manifestMs,
           chunksMs: chunksMs,
           firestoreMs: firestoreMs,
@@ -1245,6 +1364,8 @@ function stagingHandleReadSnapshot_(postData, requestStartedAt) {
         requestId: String(postData.requestId || "").slice(0, 160),
         timing: {
           sessionMs: sessionMs,
+          cacheMs: cacheMs,
+          cacheHit: cacheHit,
           manifestMs: manifestMs,
           chunksMs: chunksMs,
           firestoreMs: firestoreMs,

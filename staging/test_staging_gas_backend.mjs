@@ -41,7 +41,10 @@ assert.equal(
 
 context.Utilities = {
   newBlob(value) {
-    return { value: String(value) };
+    return {
+      value: String(value),
+      getBytes: () => Array.from(Buffer.from(String(value), "utf8")),
+    };
   },
   gzip(blob) {
     const bytes = gzipSync(blob.value);
@@ -53,6 +56,47 @@ context.Utilities = {
   base64Encode(bytes) {
     return Buffer.from(bytes.map((byte) => (byte < 0 ? byte + 256 : byte)))
       .toString("base64");
+  },
+};
+
+const scriptProperties = new Map([
+  ["STAGING_FORCE_FIRESTORE_FAILURE", "false"],
+]);
+context.PropertiesService = {
+  getScriptProperties() {
+    return {
+      getProperty: (key) => scriptProperties.get(key) ?? null,
+      setProperty(key, value) {
+        scriptProperties.set(key, String(value));
+        return this;
+      },
+      setProperties(values) {
+        Object.entries(values).forEach(([key, value]) =>
+          scriptProperties.set(key, String(value))
+        );
+        return this;
+      },
+    };
+  },
+};
+const scriptCache = new Map();
+const cacheOperations = { gets: 0, puts: 0, removes: 0 };
+context.CacheService = {
+  getScriptCache() {
+    return {
+      get(key) {
+        cacheOperations.gets += 1;
+        return scriptCache.get(key) ?? null;
+      },
+      put(key, value) {
+        cacheOperations.puts += 1;
+        scriptCache.set(key, String(value));
+      },
+      remove(key) {
+        cacheOperations.removes += 1;
+        scriptCache.delete(key);
+      },
+    };
   },
 };
 const originalChunkLimit =
@@ -77,6 +121,83 @@ assert.equal(
   2,
 );
 context.STAGING_SNAPSHOT_MAX_INLINE_COMPRESSED_BYTES_ = originalInlineLimit;
+
+const cacheManifest = {
+  schemaVersion: 1,
+  version: "cache-version-1",
+  orderCount: 379,
+  bucketCount: 1,
+  compressedBytes: oneChunkPlan.encodedBuckets[0].compressedBytes,
+  updatedAt: "2026-08-14T15:00:00.000Z",
+  chunks: [{
+    bucketId: 0,
+    slot: 0,
+    path: "adminOrderSnapshots/sanheyuan-staging/chunks/b000-s0",
+    inline: true,
+    checksum: "cache-checksum",
+    orderCount: 379,
+    compressedBytes: oneChunkPlan.encodedBuckets[0].compressedBytes,
+  }],
+  inlinePayload: oneChunkPlan.encodedBuckets[0].data,
+  inlineChecksum: "cache-checksum",
+};
+scriptProperties.set(
+  context.STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+  cacheManifest.version,
+);
+assert.equal(context.stagingStoreSnapshotCache_(cacheManifest), true);
+assert.equal(cacheOperations.puts, 1);
+assert.equal(
+  context.stagingReadCachedManifest_().version,
+  cacheManifest.version,
+);
+
+scriptProperties.set(
+  context.STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+  "newer-version",
+);
+assert.equal(context.stagingReadCachedManifest_(), null);
+assert.equal(scriptCache.has(context.STAGING_SNAPSHOT_CACHE_KEY_), false);
+
+scriptCache.set(context.STAGING_SNAPSHOT_CACHE_KEY_, "{bad-json");
+scriptProperties.set(
+  context.STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+  cacheManifest.version,
+);
+assert.equal(context.stagingReadCachedManifest_(), null);
+assert.equal(scriptCache.has(context.STAGING_SNAPSHOT_CACHE_KEY_), false);
+
+const workingCacheService = context.CacheService;
+context.CacheService = {
+  getScriptCache() {
+    return {
+      get() {
+        throw new Error("simulated cache outage");
+      },
+    };
+  },
+};
+assert.equal(
+  context.stagingReadCachedManifest_(),
+  null,
+  "cache outage must degrade to a Firestore cache miss",
+);
+context.CacheService = workingCacheService;
+
+const originalCacheMaxBytes = context.STAGING_SNAPSHOT_CACHE_MAX_BYTES_;
+context.STAGING_SNAPSHOT_CACHE_MAX_BYTES_ = 10;
+assert.equal(context.stagingStoreSnapshotCache_(cacheManifest), false);
+context.STAGING_SNAPSHOT_CACHE_MAX_BYTES_ = originalCacheMaxBytes;
+
+const cacheGetsBeforeMissingSession = cacheOperations.gets;
+context.stagingGetValidAdminSession_ = () => null;
+context.stagingJsonOutput_ = (payload) => payload;
+const missingSessionResult = context.stagingHandleReadSnapshot_(
+  { adminSessionToken: "missing", requestId: "no-session" },
+  Date.now(),
+);
+assert.equal(missingSessionResult.error, "ADMIN_SESSION_REQUIRED");
+assert.equal(cacheOperations.gets, cacheGetsBeforeMissingSession);
 
 let mutationOrders = orders;
 for (const scenario of [
@@ -196,6 +317,14 @@ assert.equal(
 assert.equal(
   JSON.parse(capturedWrites[0].fields.chunksJson.stringValue)[0].inline,
   true,
+);
+assert.equal(
+  scriptProperties.get(context.STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_),
+  inlineWriteResult.version,
+);
+assert.equal(
+  JSON.parse(scriptCache.get(context.STAGING_SNAPSHOT_CACHE_KEY_)).version,
+  inlineWriteResult.version,
 );
 
 capturedWrites.length = 0;
@@ -323,6 +452,47 @@ assert.deepEqual(
   "batchGet responses must be restored to manifest order",
 );
 
+context.stagingGetValidAdminSession_ = () => ({ displayName: "測試管理員" });
+context.stagingJsonOutput_ = (payload) => payload;
+scriptProperties.set("STAGING_FORCE_FIRESTORE_FAILURE", "false");
+scriptProperties.set(
+  context.STAGING_SNAPSHOT_CACHE_VERSION_PROPERTY_,
+  cacheManifest.version,
+);
+scriptCache.set(
+  context.STAGING_SNAPSHOT_CACHE_KEY_,
+  JSON.stringify(cacheManifest),
+);
+const cacheHitResult = context.stagingHandleReadSnapshot_(
+  { adminSessionToken: "valid", requestId: "cache-hit" },
+  Date.now(),
+);
+assert.equal(cacheHitResult.ok, true);
+assert.equal(cacheHitResult.source, "firestore");
+assert.equal(cacheHitResult.snapshotTier, "cache");
+assert.equal(cacheHitResult.timing.cacheHit, true);
+assert.equal(cacheHitResult.timing.firestoreMs, 0);
+
+let forcedFailureCacheReads = 0;
+context.stagingReadCachedManifest_ = () => {
+  forcedFailureCacheReads += 1;
+  return cacheManifest;
+};
+context.stagingReadDriveFallback_ = () => ({
+  version: "drive-version",
+  encoding: "gzip-base64",
+  data: "drive-payload",
+  compressedBytes: 123,
+});
+scriptProperties.set("STAGING_FORCE_FIRESTORE_FAILURE", "true");
+const forcedFailureResult = context.stagingHandleReadSnapshot_(
+  { adminSessionToken: "valid", requestId: "forced-drive" },
+  Date.now(),
+);
+assert.equal(forcedFailureResult.ok, true);
+assert.equal(forcedFailureResult.source, "drive");
+assert.equal(forcedFailureCacheReads, 0);
+
 assert.deepEqual(manifest.oauthScopes.sort(), [
   "https://www.googleapis.com/auth/datastore",
   "https://www.googleapis.com/auth/drive.file",
@@ -331,5 +501,5 @@ assert.deepEqual(manifest.oauthScopes.sort(), [
 
 console.log(
   "staging GAS backend regression checks passed " +
-    "(379 synthetic orders, inline root or dynamic 2/4 chunks, batchGet)",
+    "(379 synthetic orders, guarded cache, inline root or dynamic 2/4 chunks, batchGet)",
 );
