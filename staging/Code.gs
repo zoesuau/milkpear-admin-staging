@@ -784,24 +784,43 @@ function stagingReadManifest_() {
 }
 
 function stagingReadChunks_(entries) {
-  var requests = (entries || []).map(function (entry) {
-    return {
-      url: stagingFirestoreBaseUrl_() + "/" + entry.path,
-      method: "get",
+  var requestedEntries = entries || [];
+  if (!requestedEntries.length) return [];
+  var documentBaseUrl = stagingFirestoreBaseUrl_();
+  var documentNamePrefix = documentBaseUrl.replace(
+    "https://firestore.googleapis.com/v1/",
+    "",
+  );
+  var documentNames = requestedEntries.map(function (entry) {
+    return documentNamePrefix + "/" + entry.path;
+  });
+  var response = UrlFetchApp.fetch(
+    documentBaseUrl.replace(/\/documents$/, "/documents:batchGet"),
+    {
+      method: "post",
+      contentType: "application/json",
       headers: {
         Authorization: "Bearer " + ScriptApp.getOAuthToken(),
       },
+      payload: JSON.stringify({ documents: documentNames }),
       muteHttpExceptions: true,
-    };
-  });
-  var responses = requests.length ? UrlFetchApp.fetchAll(requests) : [];
-  return responses.map(function (response, index) {
-    var code = response.getResponseCode();
-    if (code < 200 || code >= 300) {
-      throw new Error("FIRESTORE_HTTP_" + code);
+    },
+  );
+  var code = response.getResponseCode();
+  if (code < 200 || code >= 300) {
+    throw new Error("FIRESTORE_BATCH_GET_HTTP_" + code);
+  }
+  var batch = JSON.parse(response.getContentText() || "[]");
+  if (!Array.isArray(batch)) batch = [batch];
+  var documentsByName = {};
+  batch.forEach(function (result) {
+    if (result && result.found && result.found.name) {
+      documentsByName[String(result.found.name)] = result.found;
     }
-    var entry = entries[index];
-    var document = JSON.parse(response.getContentText() || "{}");
+  });
+  return requestedEntries.map(function (entry, index) {
+    var document = documentsByName[documentNames[index]];
+    if (!document) throw new Error("STAGING_SNAPSHOT_CHUNK_MISSING");
     var data = stagingFieldValue_(document, "payload");
     var checksum = stagingFieldValue_(document, "checksum");
     if (!data || checksum !== entry.checksum) {

@@ -20,6 +20,8 @@ assert.match(source, /postData\.action === "adminReadProductCatalog"/);
 assert.doesNotMatch(source, /adminCreateOrder|adminUpdateOrder|adminMarkOrderShipped/);
 assert.match(source, /STAGING_FORCE_FIRESTORE_FAILURE/);
 assert.match(source, /source: "drive"/);
+assert.match(source, /documents:batchGet/);
+assert.doesNotMatch(source, /UrlFetchApp\.fetchAll/);
 
 const context = { console };
 vm.createContext(context);
@@ -42,6 +44,70 @@ orders.forEach((order) => {
 });
 assert.equal(bucketCounts.reduce((sum, count) => sum + count, 0), 376);
 assert.equal(bucketCounts.every((count) => count > 0), true);
+
+let capturedBatchRequest = null;
+context.stagingFirestoreBaseUrl_ = () =>
+  "https://firestore.googleapis.com/v1/projects/test/databases/(default)/documents";
+context.ScriptApp = { getOAuthToken: () => "test-token" };
+context.UrlFetchApp = {
+  fetch(url, options) {
+    capturedBatchRequest = { url, options };
+    const requestedNames = JSON.parse(options.payload).documents;
+    return {
+      getResponseCode: () => 200,
+      getContentText: () =>
+        JSON.stringify(
+          requestedNames
+            .slice()
+            .reverse()
+            .map((name, index) => ({
+              found: {
+                name,
+                fields: {
+                  payload: { bytesValue: `payload-${index}` },
+                  checksum: {
+                    stringValue: name.endsWith("b000-s0")
+                      ? "checksum-0"
+                      : "checksum-1",
+                  },
+                },
+              },
+            })),
+        ),
+    };
+  },
+};
+const batchEntries = [
+  {
+    bucketId: 0,
+    path: "adminOrderSnapshots/sanheyuan-staging/chunks/b000-s0",
+    checksum: "checksum-0",
+    orderCount: 12,
+    compressedBytes: 100,
+  },
+  {
+    bucketId: 1,
+    path: "adminOrderSnapshots/sanheyuan-staging/chunks/b001-s0",
+    checksum: "checksum-1",
+    orderCount: 11,
+    compressedBytes: 90,
+  },
+];
+const batchChunks = context.stagingReadChunks_(batchEntries);
+assert.equal(capturedBatchRequest.options.method, "post");
+assert.equal(
+  capturedBatchRequest.url,
+  "https://firestore.googleapis.com/v1/projects/test/databases/(default)/documents:batchGet",
+);
+assert.equal(
+  JSON.parse(capturedBatchRequest.options.payload).documents.length,
+  2,
+);
+assert.deepEqual(
+  batchChunks.map((chunk) => chunk.bucketId),
+  [0, 1],
+  "batchGet responses must be restored to manifest order",
+);
 
 assert.deepEqual(manifest.oauthScopes.sort(), [
   "https://www.googleapis.com/auth/datastore",
