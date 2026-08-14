@@ -62,6 +62,69 @@ assert.equal(oneChunkPlan.bucketCount, 1);
 assert.equal(oneChunkPlan.buckets[0].length, 376);
 assert.equal(oneChunkPlan.encodedBuckets.length, 1);
 
+let mutationOrders = orders;
+for (const scenario of [
+  "add",
+  "edit",
+  "payment",
+  "schedule",
+  "cancel",
+  "shipped",
+  "notification",
+]) {
+  mutationOrders = context.stagingApplySyntheticMutationScenario_(
+    mutationOrders,
+    scenario,
+  );
+}
+assert.equal(mutationOrders.length, 377);
+assert.equal(
+  context.stagingFindSyntheticOrderIndex_(
+    mutationOrders,
+    "STAGING-MUTATION-NEW",
+  ) >= 0,
+  true,
+);
+assert.deepEqual(
+  {
+    recipientName: mutationOrders[0].recipientName,
+    finalAmount: mutationOrders[0].finalAmount,
+    paymentState: mutationOrders[0].paymentState,
+    expectedShippingDate: mutationOrders[0].expectedShippingDate,
+  },
+  {
+    recipientName: "測試修改收件人",
+    finalAmount: 4321,
+    paymentState: "bank_paid",
+    expectedShippingDate: "2026/08/29",
+  },
+);
+assert.equal(mutationOrders[1].orderStatus, "已取消");
+assert.deepEqual(
+  {
+    orderStatus: mutationOrders[2].orderStatus,
+    actualShippingDate: mutationOrders[2].actualShippingDate,
+    trackingNo: mutationOrders[2].trackingNo,
+    notificationStatus: mutationOrders[2].notificationStatus,
+    lastNotificationType: mutationOrders[2].lastNotificationType,
+  },
+  {
+    orderStatus: "已寄出",
+    actualShippingDate: "2026/08/30",
+    trackingNo: "STAGING123456789",
+    notificationStatus: "sent",
+    lastNotificationType: "shipment_notice",
+  },
+);
+assert.throws(
+  () =>
+    context.stagingApplySyntheticMutationScenario_(
+      mutationOrders,
+      "unsupported",
+    ),
+  /STAGING_MUTATION_SCENARIO_INVALID/,
+);
+
 context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 7000;
 const twoChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
 assert.equal(twoChunkPlan.bucketCount, 2);

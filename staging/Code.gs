@@ -720,18 +720,11 @@ function stagingReadDriveFallback_() {
   return payload;
 }
 
-function seedStagingSyntheticSnapshot() {
-  assertStagingIdentity_();
-  if (stagingAllowedAdminIds_().length !== 1) {
-    throw new Error("STAGING_ADMIN_ALLOWLIST_INVALID");
-  }
-  if (stagingProperty_("LINE_LOGIN_CHANNEL_SECRET").length < 20) {
-    throw new Error("STAGING_LINE_SECRET_INVALID");
-  }
-  var orders = stagingBuildSyntheticOrders_();
+function stagingWriteSyntheticSnapshot_(orders, versionLabel) {
   var version =
     Utilities.formatDate(new Date(), "Asia/Taipei", "yyyyMMddHHmmssSSS") +
-    "-staging";
+    "-staging-" +
+    String(versionLabel || "seed").replace(/[^a-z0-9_-]/gi, "").slice(0, 32);
   var snapshotPlan = stagingBuildSnapshotPlan_(orders, version);
   var manifestEntries = [];
   var totalCompressedBytes = 0;
@@ -788,6 +781,20 @@ function seedStagingSyntheticSnapshot() {
     driveFileConfigured: true,
     containsOrderData: false,
   };
+}
+
+function seedStagingSyntheticSnapshot() {
+  assertStagingIdentity_();
+  if (stagingAllowedAdminIds_().length !== 1) {
+    throw new Error("STAGING_ADMIN_ALLOWLIST_INVALID");
+  }
+  if (stagingProperty_("LINE_LOGIN_CHANNEL_SECRET").length < 20) {
+    throw new Error("STAGING_LINE_SECRET_INVALID");
+  }
+  return stagingWriteSyntheticSnapshot_(
+    stagingBuildSyntheticOrders_(),
+    "seed",
+  );
 }
 
 function stagingReadManifest_() {
@@ -890,6 +897,157 @@ function verifyStagingSyntheticSnapshot() {
     firestoreMatches: firestoreOrders.length === manifest.orderCount,
     driveMatches: driveOrders.length === manifest.orderCount,
     containsOrderData: false,
+  };
+}
+
+function stagingCloneJson_(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+function stagingFindSyntheticOrderIndex_(orders, orderNo) {
+  for (var i = 0; i < orders.length; i++) {
+    if (String(orders[i].orderNo) === String(orderNo)) return i;
+  }
+  return -1;
+}
+
+function stagingApplySyntheticMutationScenario_(orders, scenario) {
+  var nextOrders = stagingCloneJson_(orders || []);
+  var targetIndex = 0;
+  if (scenario === "add") {
+    var added = stagingSyntheticOrder_(STAGING_SNAPSHOT_ORDER_COUNT_ + 1000);
+    added.orderNo = "STAGING-MUTATION-NEW";
+    added.orderStatus = "新訂單";
+    added.orderSource = "管理員新增的訂單";
+    if (stagingFindSyntheticOrderIndex_(nextOrders, added.orderNo) !== -1) {
+      throw new Error("STAGING_MUTATION_ADD_DUPLICATE");
+    }
+    nextOrders.push(added);
+    return nextOrders;
+  }
+  if (!nextOrders.length) throw new Error("STAGING_MUTATION_ORDER_MISSING");
+  if (scenario === "cancel") targetIndex = 1;
+  if (scenario === "shipped" || scenario === "notification") targetIndex = 2;
+  if (!nextOrders[targetIndex]) {
+    throw new Error("STAGING_MUTATION_TARGET_MISSING:" + scenario);
+  }
+  var order = nextOrders[targetIndex];
+  if (scenario === "edit") {
+    order.recipientName = "測試修改收件人";
+    order.recipientAddress = "測試縣修改路88號";
+    order.itemsSummary = "測試商品A ×2｜測試商品B ×1";
+    order.finalAmount = 4321;
+    order.adminNote = "隔離完整修改測試";
+  } else if (scenario === "payment") {
+    order.paymentMethod = "銀行轉帳";
+    order.paymentState = "bank_paid";
+    order.paymentStatus = "已付款";
+  } else if (scenario === "schedule") {
+    order.expectedShippingDate = "2026/08/29";
+    order.orderStatus = "已安排出貨日期";
+    order.requestedShippingBatchId = "STAGING-BATCH-0829";
+    order.requestedShippingBatchLabel = "8/29 測試批次";
+    order.shippingDateNoticeMode = "line";
+  } else if (scenario === "cancel") {
+    order.orderStatus = "已取消";
+    order.lastUpdatedBy = "隔離測試管理員";
+    order.lastUpdatedAt = "2026/08/14 14:30:00";
+  } else if (scenario === "shipped") {
+    order.orderStatus = "已寄出";
+    order.actualShippingDate = "2026/08/30";
+    order.trackingNo = "STAGING123456789";
+  } else if (scenario === "notification") {
+    order.orderStatus = "已寄出";
+    order.actualShippingDate = "2026/08/30";
+    order.trackingNo = "STAGING123456789";
+    order.notificationStatus = "sent";
+    order.lastNotificationType = "shipment_notice";
+    order.lastNotificationMethod = "line_push";
+    order.lastNotificationAt = "2026/08/30 16:00:00";
+  } else {
+    throw new Error("STAGING_MUTATION_SCENARIO_INVALID:" + scenario);
+  }
+  return nextOrders;
+}
+
+function stagingReadAllSyntheticSnapshotOrders_() {
+  var manifest = stagingReadManifest_();
+  var orders = [];
+  stagingReadChunks_(manifest.chunks).forEach(function (chunk) {
+    var decoded = stagingDecodePayload_(chunk.data);
+    orders = orders.concat(decoded.orders || []);
+  });
+  return { manifest: manifest, orders: orders };
+}
+
+function stagingCanonicalOrdersJson_(orders) {
+  return JSON.stringify(
+    stagingCloneJson_(orders || []).sort(function (left, right) {
+      return String(left.orderNo).localeCompare(String(right.orderNo));
+    }),
+  );
+}
+
+function testStagingSyntheticMutationConsistency() {
+  assertStagingIdentity_();
+  var baselineOrders = stagingBuildSyntheticOrders_();
+  var authoritativeOrders = stagingCloneJson_(baselineOrders);
+  var scenarioNames = [
+    "add",
+    "edit",
+    "payment",
+    "schedule",
+    "cancel",
+    "shipped",
+    "notification",
+  ];
+  var scenarioResults = [];
+  var testError = null;
+  var restoreResult = null;
+  try {
+    scenarioNames.forEach(function (scenario) {
+      authoritativeOrders = stagingApplySyntheticMutationScenario_(
+        authoritativeOrders,
+        scenario,
+      );
+      var writeResult = stagingWriteSyntheticSnapshot_(
+        authoritativeOrders,
+        "mutation-" + scenario,
+      );
+      var firestore = stagingReadAllSyntheticSnapshotOrders_();
+      var drive = stagingReadDriveFallback_();
+      var driveOrders = stagingDecodePayload_(drive.data).orders || [];
+      var authoritativeJson = stagingCanonicalOrdersJson_(authoritativeOrders);
+      var firestoreMatches =
+        stagingCanonicalOrdersJson_(firestore.orders) === authoritativeJson;
+      var driveMatches =
+        stagingCanonicalOrdersJson_(driveOrders) === authoritativeJson;
+      if (!firestoreMatches || !driveMatches) {
+        throw new Error("STAGING_MUTATION_CONSISTENCY_FAILED:" + scenario);
+      }
+      scenarioResults.push({
+        scenario: scenario,
+        orderCount: authoritativeOrders.length,
+        bucketCount: writeResult.bucketCount,
+        firestoreMatches: firestoreMatches,
+        driveMatches: driveMatches,
+        browserMatchesAuthoritativeSnapshot: firestoreMatches,
+      });
+    });
+  } catch (error) {
+    testError = error;
+  } finally {
+    restoreResult = stagingWriteSyntheticSnapshot_(baselineOrders, "restored");
+  }
+  if (testError) throw testError;
+  return {
+    ok: true,
+    environment: "staging",
+    containsOrderData: false,
+    scenarios: scenarioResults,
+    finalTestOrderCount: authoritativeOrders.length,
+    restored: restoreResult.orderCount === STAGING_SNAPSHOT_ORDER_COUNT_,
+    restoredOrderCount: restoreResult.orderCount,
   };
 }
 
