@@ -24,3 +24,27 @@ backend, while the shipping-print data is still loaded on demand.
 `local-browser-e2e-results.json` records the 2026-08-14 browser run. These are
 localhost mock timings and must not be used as evidence that Google, Firestore,
 Drive, GAS, or LINE meets the production latency acceptance target.
+
+## Isolated Google staging deployment (2026-08-14)
+
+- Apps Script project: `Sanheyuan Admin Snapshot Staging`
+- Script ID: `1PS12OSMlZVXLZ3ml-hnaCRnAcSpBnmT8Qc8gyDwi93IgdncNz8u51oI_`
+- Standard GCP project number: `261143837915`
+- Web app deployment ID: `AKfycbxxbaWN-hi8_L2DBkXYIJ3Goq-exNepfImswYDe54VRFG4wxGpi7Rl5FUdO-pWpaBgQ7A`
+- Frontend: `https://zoesuau.github.io/milkpear-admin-staging/`
+- Firestore root: `adminOrderSnapshots/sanheyuan-staging`
+- Drive folder: `三合院訂單快照備援 STAGING`
+- Dataset: exactly 376 generated, deidentified orders in 32 chunks
+
+The project has no Google Sheets scope and no order mutation endpoint. Script
+properties contain one staging admin allowlist entry and the LINE channel
+secret, but neither value is stored in this repository or exposed by the health
+endpoint. `seedStagingSyntheticSnapshot()` and
+`verifyStagingSyntheticSnapshot()` both completed successfully; the health
+endpoint reported the staging environment, one allowed admin, and configured
+Drive folder/file without returning order data.
+
+Rollback is isolated: point `customer-config.js` back to the prior staging GAS
+URL (or the placeholder) and redeploy only the staging repository. Production
+Pages, production Apps Script version 248, and production data are not part of
+this deployment.

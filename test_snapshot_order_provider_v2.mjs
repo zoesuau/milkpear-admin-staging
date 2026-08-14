@@ -33,7 +33,10 @@ assert.equal(
 );
 
 assert.match(config, /"environment": "staging"/);
-assert.match(config, /PASTE_STAGING_GAS_WEB_APP_URL/);
+assert.match(
+  config,
+  /"gasApiUrl": "https:\/\/script\.google\.com\/macros\/s\/AKfycbxxbaWN-hi8_L2DBkXYIJ3Goq-exNepfImswYDe54VRFG4wxGpi7Rl5FUdO-pWpaBgQ7A\/exec"/,
+);
 assert.match(
   config,
   /"adminSiteUrl": "https:\/\/zoesuau\.github\.io\/milkpear-admin-staging\/"/,
