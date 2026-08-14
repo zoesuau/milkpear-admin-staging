@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
+import { gzipSync } from "node:zlib";
 
 const source = readFileSync(new URL("./Code.gs", import.meta.url), "utf8");
 const manifest = JSON.parse(
@@ -38,12 +39,51 @@ assert.equal(
   true,
 );
 
-const bucketCounts = Array.from({ length: 32 }, () => 0);
-orders.forEach((order) => {
-  bucketCounts[context.stagingStableHash_(order.orderNo) % 32] += 1;
-});
-assert.equal(bucketCounts.reduce((sum, count) => sum + count, 0), 376);
-assert.equal(bucketCounts.every((count) => count > 0), true);
+context.Utilities = {
+  newBlob(value) {
+    return { value: String(value) };
+  },
+  gzip(blob) {
+    const bytes = gzipSync(blob.value);
+    return {
+      getBytes: () =>
+        Array.from(bytes, (byte) => (byte > 127 ? byte - 256 : byte)),
+    };
+  },
+  base64Encode(bytes) {
+    return Buffer.from(bytes.map((byte) => (byte < 0 ? byte + 256 : byte)))
+      .toString("base64");
+  },
+};
+const originalChunkLimit =
+  context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_;
+const oneChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
+assert.equal(oneChunkPlan.bucketCount, 1);
+assert.equal(oneChunkPlan.buckets[0].length, 376);
+assert.equal(oneChunkPlan.encodedBuckets.length, 1);
+
+context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 7000;
+const twoChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
+assert.equal(twoChunkPlan.bucketCount, 2);
+assert.equal(
+  twoChunkPlan.buckets.reduce((sum, bucket) => sum + bucket.length, 0),
+  376,
+);
+
+context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 4000;
+const fourChunkPlan = context.stagingBuildSnapshotPlan_(orders, "test-version");
+assert.equal(fourChunkPlan.bucketCount, 4);
+assert.equal(
+  fourChunkPlan.buckets.reduce((sum, bucket) => sum + bucket.length, 0),
+  376,
+);
+
+context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 1;
+assert.throws(
+  () => context.stagingBuildSnapshotPlan_(orders, "test-version"),
+  /STAGING_SNAPSHOT_EXCEEDS_FOUR_CHUNKS/,
+);
+context.STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = originalChunkLimit;
 
 let capturedBatchRequest = null;
 context.stagingFirestoreBaseUrl_ = () =>
@@ -116,5 +156,6 @@ assert.deepEqual(manifest.oauthScopes.sort(), [
 ]);
 
 console.log(
-  `staging GAS backend regression checks passed (376 synthetic orders, ${bucketCounts.length} buckets)`,
+  "staging GAS backend regression checks passed " +
+    "(376 synthetic orders, dynamic 1/2/4 chunks, batchGet)",
 );

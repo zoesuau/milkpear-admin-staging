@@ -2,7 +2,8 @@
 // This project intentionally has no Google Sheets order write path.
 
 var STAGING_SNAPSHOT_SCHEMA_VERSION_ = 1;
-var STAGING_SNAPSHOT_BUCKET_COUNT_ = 32;
+var STAGING_SNAPSHOT_BUCKET_COUNTS_ = [1, 2, 4];
+var STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_ = 500000;
 var STAGING_SNAPSHOT_ORDER_COUNT_ = 376;
 var STAGING_SNAPSHOT_ROOT_PATH_ = "adminOrderSnapshots/sanheyuan-staging";
 var STAGING_SESSION_PREFIX_ = "STAGING_ADMIN_SESSION_";
@@ -549,6 +550,44 @@ function stagingBuildSyntheticOrders_() {
   return orders;
 }
 
+function stagingBuildSnapshotPlan_(orders, version) {
+  for (
+    var candidateIndex = 0;
+    candidateIndex < STAGING_SNAPSHOT_BUCKET_COUNTS_.length;
+    candidateIndex++
+  ) {
+    var bucketCount = STAGING_SNAPSHOT_BUCKET_COUNTS_[candidateIndex];
+    var buckets = [];
+    for (var i = 0; i < bucketCount; i++) buckets.push([]);
+    orders.forEach(function (order) {
+      buckets[stagingStableHash_(order.orderNo) % bucketCount].push(order);
+    });
+    var encodedBuckets = buckets.map(function (bucket, bucketId) {
+      return stagingEncodePayload_({
+        schemaVersion: STAGING_SNAPSHOT_SCHEMA_VERSION_,
+        version: version,
+        bucketId: bucketId,
+        orders: bucket,
+      });
+    });
+    if (
+      encodedBuckets.every(function (encoded) {
+        return (
+          encoded.compressedBytes <=
+          STAGING_SNAPSHOT_MAX_COMPRESSED_BYTES_PER_CHUNK_
+        );
+      })
+    ) {
+      return {
+        bucketCount: bucketCount,
+        buckets: buckets,
+        encodedBuckets: encodedBuckets,
+      };
+    }
+  }
+  throw new Error("STAGING_SNAPSHOT_EXCEEDS_FOUR_CHUNKS");
+}
+
 function stagingDriveFetch_(url, options) {
   var request = options || {};
   request.headers = request.headers || {};
@@ -690,25 +729,14 @@ function seedStagingSyntheticSnapshot() {
     throw new Error("STAGING_LINE_SECRET_INVALID");
   }
   var orders = stagingBuildSyntheticOrders_();
-  var buckets = [];
-  for (var i = 0; i < STAGING_SNAPSHOT_BUCKET_COUNT_; i++) buckets.push([]);
-  orders.forEach(function (order) {
-    buckets[
-      stagingStableHash_(order.orderNo) % STAGING_SNAPSHOT_BUCKET_COUNT_
-    ].push(order);
-  });
   var version =
     Utilities.formatDate(new Date(), "Asia/Taipei", "yyyyMMddHHmmssSSS") +
     "-staging";
+  var snapshotPlan = stagingBuildSnapshotPlan_(orders, version);
   var manifestEntries = [];
   var totalCompressedBytes = 0;
-  buckets.forEach(function (bucket, bucketId) {
-    var encoded = stagingEncodePayload_({
-      schemaVersion: STAGING_SNAPSHOT_SCHEMA_VERSION_,
-      version: version,
-      bucketId: bucketId,
-      orders: bucket,
-    });
+  snapshotPlan.buckets.forEach(function (bucket, bucketId) {
+    var encoded = snapshotPlan.encodedBuckets[bucketId];
     var checksum = stagingChecksum_(encoded.bytes);
     var path =
       STAGING_SNAPSHOT_ROOT_PATH_ +
@@ -741,7 +769,7 @@ function seedStagingSyntheticSnapshot() {
     schemaVersion: stagingIntegerField_(STAGING_SNAPSHOT_SCHEMA_VERSION_),
     currentVersion: stagingStringField_(version),
     orderCount: stagingIntegerField_(orders.length),
-    bucketCount: stagingIntegerField_(STAGING_SNAPSHOT_BUCKET_COUNT_),
+    bucketCount: stagingIntegerField_(snapshotPlan.bucketCount),
     compressedBytes: stagingIntegerField_(totalCompressedBytes),
     chunksJson: stagingStringField_(JSON.stringify(manifestEntries)),
     updatedAt: stagingTimestampField_(now),
