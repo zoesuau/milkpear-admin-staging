@@ -34,8 +34,9 @@ Drive, GAS, or LINE meets the production latency acceptance target.
 - Frontend: `https://zoesuau.github.io/milkpear-admin-staging/`
 - Firestore root: `adminOrderSnapshots/sanheyuan-staging`
 - Drive folder: `三合院訂單快照備援 STAGING`
-- Dataset: exactly 379 generated, deidentified orders; currently 1 chunk,
-  automatically increasing to 2 or 4 only when compressed size requires it
+- Dataset: exactly 379 generated, deidentified orders; the gzip payload is
+  stored in the root manifest document when it is at most 500,000 compressed
+  bytes, automatically falling back to 2 or 4 chunk documents when required
 
 The project has no Google Sheets scope and no order mutation endpoint. Script
 properties contain one staging admin allowlist entry and the LINE channel
@@ -89,3 +90,10 @@ Version 4 completed 20/20 Firestore cold loads with P50 2.889 seconds and P95
 browser phases remain negligible; Firestore and the Apps Script/platform
 network gap dominate. This staging pass does not by itself authorize another
 production switch.
+
+The single-document v5 results are recorded in
+[`live-browser-e2e-v5-single-document-2026-08-14.md`](live-browser-e2e-v5-single-document-2026-08-14.md).
+Version 5 completed 20/20 Firestore cold loads with zero retries, P50 2.554
+seconds, P95 3.142 seconds, and maximum 3.438 seconds. Forced Drive fallback
+and Firestore restore also passed. This remains an isolated staging result and
+does not authorize a production cutover.
