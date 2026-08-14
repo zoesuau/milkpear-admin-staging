@@ -34,7 +34,8 @@ Drive, GAS, or LINE meets the production latency acceptance target.
 - Frontend: `https://zoesuau.github.io/milkpear-admin-staging/`
 - Firestore root: `adminOrderSnapshots/sanheyuan-staging`
 - Drive folder: `三合院訂單快照備援 STAGING`
-- Dataset: exactly 376 generated, deidentified orders in 32 chunks
+- Dataset: exactly 376 generated, deidentified orders; currently 1 chunk,
+  automatically increasing to 2 or 4 only when compressed size requires it
 
 The project has no Google Sheets scope and no order mutation endpoint. Script
 properties contain one staging admin allowlist entry and the LINE channel
@@ -58,3 +59,10 @@ The follow-up `batchGet` v2 results are recorded in
 [`live-browser-e2e-batchget-2026-08-14.md`](live-browser-e2e-batchget-2026-08-14.md).
 Version 2 improved cold-load success from 18/20 to 20/20 and reduced P50/P95,
 but it still exceeded the 4/5-second latency targets and remains test-only.
+
+The dynamic-chunk v3 results are recorded in
+[`live-browser-e2e-dynamic-chunks-2026-08-14.md`](live-browser-e2e-dynamic-chunks-2026-08-14.md).
+Its fully instrumented 20-run set completed 20/20 with P50 2.836 seconds and
+P95 3.919 seconds, and the forced Drive fallback also passed. The isolated read
+path therefore meets its latency acceptance target, but production remains
+unchanged until real order-mutation consistency is separately verified.
