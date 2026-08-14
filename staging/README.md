@@ -97,3 +97,12 @@ Version 5 completed 20/20 Firestore cold loads with zero retries, P50 2.554
 seconds, P95 3.142 seconds, and maximum 3.438 seconds. Forced Drive fallback
 and Firestore restore also passed. This remains an isolated staging result and
 does not authorize a production cutover.
+
+The guarded script-cache v6 results are recorded in
+[`live-browser-e2e-v6-script-cache-2026-08-14.md`](live-browser-e2e-v6-script-cache-2026-08-14.md).
+Version 6 completed 20/20 cold loads with zero retries and 20/20 cache hits;
+snapshot-to-paint P50 was 1.569 seconds, P95 2.006 seconds, and maximum 2.125
+seconds. An explicit cache miss completed through Firestore in 3.676 seconds,
+forced Drive fallback completed in 1.986 seconds, and Firestore was restored.
+This passes the isolated read-path gate but does not authorize production by
+itself.
