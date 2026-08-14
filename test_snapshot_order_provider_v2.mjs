@@ -52,6 +52,22 @@ assert.match(fetchSource, /if \(adminOrderSnapshotFetchPromise\)/);
 assert.match(fetchSource, /ADMIN_ORDER_SNAPSHOT_MAX_RETRIES \+ 1/);
 assert.match(fetchSource, /LINE 登入狀態未受影響/);
 
+const initializationSource = sourceBetween(
+  html,
+  '      window.addEventListener("DOMContentLoaded", async () => {',
+  "      // ==========================================\n      // ✨ 系統一",
+);
+assert.doesNotMatch(
+  initializationSource,
+  /handleShippingManifestRangeChange\(\);/,
+  "orders home must not preload shipping or EZcat candidates",
+);
+assert.match(
+  sourceBetween(html, "      function switchAdminTab(", "      function setShippingBatchManagementFeedback("),
+  /tabName === "shippingPrint"[\s\S]*?loadCompleteShippingManifestOrders\(\)/,
+  "shipping candidates must still load on demand when opening the print tab",
+);
+
 const authContext = {
   ADMIN_LINE_STATE_KEY: "state",
   ADMIN_LINE_NONCE_KEY: "nonce",
@@ -184,6 +200,7 @@ function makeProviderHarness(responseFactories, options = {}) {
       },
     },
     document: {
+      documentElement: { dataset: {} },
       getElementById(id) {
         return id === "adminReadStatus" ? status : null;
       },
@@ -256,6 +273,10 @@ assert.deepEqual(JSON.parse(JSON.stringify(driveResult)), driveOrders);
 assert.equal(driveHarness.fetchCount, 1);
 assert.equal(driveHarness.adminLastOrderReadDiagnostic.source, "drive");
 assert.equal(driveHarness.adminLastOrderReadDiagnostic.stale, true);
+assert.match(
+  driveHarness.document.documentElement.dataset.snapshotDiagnostic,
+  /"source":"drive"/,
+);
 assert.equal(
   driveHarness.messages.some((message) => message.includes("登入失敗")),
   false,

@@ -6307,6 +6307,15 @@
           ? JSON.parse(JSON.stringify(adminLastOrderReadDiagnostic))
           : null;
 
+      function publishAdminOrderSnapshotDiagnostic(diagnostic) {
+        adminLastOrderReadDiagnostic = diagnostic;
+        if (document.documentElement) {
+          document.documentElement.dataset.snapshotDiagnostic = diagnostic
+            ? JSON.stringify(diagnostic)
+            : "";
+        }
+      }
+
       function getAdminCreatePayloadFingerprint(payload) {
         const comparable = { ...payload };
         delete comparable.adminSessionToken;
@@ -9035,7 +9044,7 @@
                 0,
                 getAdminPerformanceNow() - operationStartedAt,
               );
-              adminLastOrderReadDiagnostic = diagnostic;
+              publishAdminOrderSnapshotDiagnostic(diagnostic);
 
               if (adminReadStatusEl && !silent) {
                 adminReadStatusEl.className = payload.stale
@@ -9060,7 +9069,7 @@
                   0,
                   getAdminPerformanceNow() - operationStartedAt,
                 );
-                adminLastOrderReadDiagnostic = diagnostic;
+                publishAdminOrderSnapshotDiagnostic(diagnostic);
                 showAdminAuthOverlay("⚠️ 登入已過期，請重新登入 LINE", true);
                 return null;
               }
@@ -9075,7 +9084,7 @@
                 0,
                 getAdminPerformanceNow() - operationStartedAt,
               );
-              adminLastOrderReadDiagnostic = diagnostic;
+              publishAdminOrderSnapshotDiagnostic(diagnostic);
             }
           }
 
@@ -15792,7 +15801,7 @@
             handleShippingManifestRangeChange,
           );
         }
-        handleShippingManifestRangeChange();
+        renderShippingManifest();
 
         bindAdminWorkflowEvents();
         updateCurrentWeekFilterButtonLabel();
@@ -15859,6 +15868,7 @@
               0,
               getAdminPerformanceNow() - snapshotVisibleStartedAt,
             );
+            publishAdminOrderSnapshotDiagnostic(adminLastOrderReadDiagnostic);
           }
           await recoverPendingAdminCreateOrderOnLoad();
         } finally {
