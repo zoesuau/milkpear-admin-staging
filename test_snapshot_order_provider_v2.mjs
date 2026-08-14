@@ -34,7 +34,15 @@ assert.equal(
 
 assert.match(config, /"environment": "staging"/);
 assert.match(config, /PASTE_STAGING_GAS_WEB_APP_URL/);
-assert.match(config, /PASTE_STAGING_ADMIN_SITE_URL/);
+assert.match(
+  config,
+  /"adminSiteUrl": "https:\/\/zoesuau\.github\.io\/milkpear-admin-staging\/"/,
+);
+assert.doesNotMatch(
+  config,
+  /AKfycby9r7QgpvOJ7KP_3uVI9eYHkzeJnPVFhP7Z3uQdQBvMogYglPoim79H3HJpjyUAgW57/,
+  "staging config must never contain the production GAS deployment URL",
+);
 assert.match(html, /SNAPSHOT_STAGING_IDENTITY_REQUIRED/);
 
 const fetchSource = sourceBetween(
